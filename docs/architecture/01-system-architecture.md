@@ -106,6 +106,9 @@ OpenAI 호환 API로 gemma 26B(reasoning)를 서빙한다. **평소에는 꺼져
 비밀번호는 BCrypt로 저장한다. 토큰 클레임·경로별 권한 규칙·401/403 구분 등 구현 수준 상세는
 [`07-auth-and-chatbot.md`](07-auth-and-chatbot.md) §1이 정본이다.
 
+> 현재 **기본 경로는 공용 인프라 auth 위임(RS256)** 이고, 아래 로컬 HS256 발급은 인프라 불통 시의
+> 폴백으로 남아 있다. 위임·강등 구조는 [`09-infra-integration.md`](09-infra-integration.md) §2가 정본이다.
+
 ```
 로그인 (email + password)
    → 서버가 자격 검증 후 JWT 발급 (role 클레임 포함)
@@ -176,6 +179,7 @@ graph LR
 | [`06-ops-flows.md`](06-ops-flows.md) | 재고 임계 알림 래치 · 관리 행위 감사 기록 · 주문확인 메일 |
 | [`07-auth-and-chatbot.md`](07-auth-and-chatbot.md) | JWT 인증·역할 게이트 · 챗봇 파이프라인 (§3·§4 확장) |
 | [`08-verification-pipeline.md`](08-verification-pipeline.md) | 태스크→구현→검증 루프 · 인박스 협업 프로토콜 |
+| [`09-infra-integration.md`](09-infra-integration.md) | 공용 인프라 위임 — 인증 강등 · 이미지 파이프라인 · 관리자 업로드 |
 
 SVG 익스포트는 [`assets/diagrams/`](assets/diagrams/)에 문서명-순번으로 들어 있다.
 

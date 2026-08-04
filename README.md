@@ -106,7 +106,7 @@ JVM 단위 테스트로 검증합니다.
 
 ![검증 파이프라인](docs/architecture/assets/diagrams/08-verification-pipeline-1.svg)
 
-전체 SVG 17장은 [`docs/architecture/assets/diagrams/`](docs/architecture/assets/diagrams/)에
+전체 SVG 21장은 [`docs/architecture/assets/diagrams/`](docs/architecture/assets/diagrams/)에
 문서명-순번으로 들어 있습니다.
 
 ## 개발 방식 — 멀티 에이전트 협업
@@ -134,6 +134,7 @@ JVM 단위 테스트로 검증합니다.
 | [`docs/architecture/06-ops-flows.md`](docs/architecture/06-ops-flows.md) | 재고 임계 알림 래치 · 관리 행위 감사 기록 · 주문확인 메일 |
 | [`docs/architecture/07-auth-and-chatbot.md`](docs/architecture/07-auth-and-chatbot.md) | JWT 인증·역할 게이트 · 챗봇 파이프라인 (구현 수준) |
 | [`docs/architecture/08-verification-pipeline.md`](docs/architecture/08-verification-pipeline.md) | 태스크→구현→검증 루프 · 인박스 협업 프로토콜 |
+| [`docs/architecture/09-infra-integration.md`](docs/architecture/09-infra-integration.md) | 공용 인프라 위임 — 인증 강등 · 이미지 파이프라인 · 관리자 업로드 |
 | [`docs/planning/01-project-brief.md`](docs/planning/01-project-brief.md) | 프로젝트 목적 · 메인 포인트 · 확정 사항 |
 | [`docs/planning/02-scope.md`](docs/planning/02-scope.md) | 플랫폼 범위 · P0~P2 · Out-of-Scope |
 | [`docs/requirements/01-functional.md`](docs/requirements/01-functional.md) | 기능 요구사항 |
