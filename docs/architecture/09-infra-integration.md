@@ -1,12 +1,13 @@
 # 인프라 연동 (Infra Integration)
 
-> 상태: ✅ 확정 · 최종수정: 2026-08-04
+> 상태: ✅ 확정 · 최종수정: 2026-08-05
 
-데모가 SWorkAgency **공용 인프라**에 위임한 두 축 — 인증과 상품 이미지 저장·최적화 — 를 다룬다.
+데모가 SWorkAgency **공용 인프라**에 위임한 세 축 — 인증, 상품 이미지 저장·최적화, 실시간 상담 채팅 — 을 다룬다.
 데모 자체 구현이던 것을 인프라로 옮긴 부분이라, [`07-auth-and-chatbot.md`](07-auth-and-chatbot.md) §1(로컬 HS256 JWT)은
 **폴백 경로로 남아 있는 서술**로 읽어야 한다. 현재 기본 경로는 이 문서가 정본이다.
 
 > 이미지 버전: [`assets/diagrams/09-infra-integration-1.svg`](assets/diagrams/09-infra-integration-1.svg) · [`-2.svg`](assets/diagrams/09-infra-integration-2.svg) · [`-3.svg`](assets/diagrams/09-infra-integration-3.svg) · [`-4.svg`](assets/diagrams/09-infra-integration-4.svg)
+> — `-1.svg`(전체 구성도)는 상담 채팅 축이 추가된 2026-08-05 개정이 아직 반영되지 않았다. 다음 일괄 익스포트 때 갱신한다.
 
 ---
 
@@ -33,15 +34,17 @@ flowchart LR
         gw["게이트웨이<br/>WAF IP 허용목록 · JWT 검증"]
         auth["auth-server<br/>RS256 발급 · JWKS 공개"]
         file["file-server · media<br/>원본 보관 · 파생본 생성"]
-        chat["chat-server<br/>실시간 상담 — 예정"]
+        chat["chat-server<br/>실시간 상담 · WebSocket"]
         gw --> auth
         gw --> file
-        gw -.-> chat
+        gw --> chat
     end
 
     server -->|"① 로그인 · 리프레시 위임"| gw
     server -->|"② 이미지 업로드 · 삭제<br/>서비스 토큰"| gw
+    server -->|"④ 상담 룸 생성 · REST 프록시"| gw
     client -.->|"③ 이미지 GET<br/>공개 경로 · 무인증 · 엣지 캐시"| file
+    client -.->|"⑤ 상담 WebSocket<br/>고객 브라우저가 직접 접속"| chat
 
     classDef step fill:#DBEAFE,stroke:#1D4ED8,stroke-width:1.5px,color:#0F172A
     classDef ext fill:#F1F5F9,stroke:#94A3B8,stroke-width:1.5px,color:#0F172A
@@ -53,10 +56,12 @@ flowchart LR
 
 연동을 관통하는 원칙은 세 가지다.
 
-**1) 인프라와 말을 섞는 것은 데모 백엔드뿐이다.** 인프라 게이트웨이 앞에는 데모 서버 고정 IP와 오너 IP만
-통과시키는 WAF 허용목록이 걸려 있어서, 프런트가 인프라를 직접 부르는 순간 이 통제가 무너진다. 최종 사용자가
-인프라를 만나는 유일한 지점은 **무인증 공개 이미지 경로(`/public-files/**`)에 대한 GET** 하나뿐이고, 이건
-정적 자산을 CDN에서 받는 것과 성격이 같다.
+**1) 인프라와 말을 섞는 것은 원칙적으로 데모 백엔드뿐이다.** 인프라 게이트웨이 앞에는 데모 서버 고정 IP와
+오너 IP만 통과시키는 WAF 허용목록이 걸려 있어서, 프런트가 인프라를 직접 부르는 순간 이 통제가 무너진다.
+최종 사용자가 인프라를 직접 만나는 지점은 **딱 둘로 한정**된다 — **무인증 공개 이미지 경로
+(`/public-files/**`)에 대한 GET**(정적 자산을 CDN에서 받는 것과 성격이 같다), 그리고 **상담 채팅의
+WebSocket 구간**(§5)이다. 후자는 프로토콜상 프록시가 성립하지 않아 예외로 연 것이고, 그마저 룸 생성 같은
+REST는 종전대로 데모 백엔드를 거친다.
 
 **2) 인증은 인프라, 인가는 데모다.** 인프라가 자격을 확인하고 토큰을 발급하지만, "이 사람이 무엇을 할 수
 있는가"는 데모 로컬 `users.role`이 정본이다(§2.3).
@@ -73,7 +78,7 @@ flowchart LR
 |---|---|---|
 | `ecommerce-demo-auth-delegation.md` | v1.1 · 라이브 | 로그인·가입·리프레시·폐기, 토큰 클레임, 장애 정책 |
 | `ecommerce-demo-file-delegation.md` | v1 · 라이브 | 서비스 토큰, 업로드·파생본·삭제, 공개 URL |
-| `ecommerce-demo-chat-delegation.md` | draft v0.95 · 설계 중 | 실시간 상담 채팅 (§5) |
+| `ecommerce-demo-chat-delegation.md` | v1.1 · 라이브 | 실시간 상담 채팅, 룸 생성 `customerName` (§5) |
 
 ---
 
@@ -506,10 +511,15 @@ product-<상품id>-<밀리초>.<소문자 확장자>
 
 ---
 
-## 5. 예정 — 실시간 상담 채팅
+## 5. 실시간 상담 채팅
 
-인프라 chat-server를 이용한 **1:1 실시간 고객 상담**이 다음 연동 대상으로 합의됐고, 계약이 초안(draft v0.95)
-단계에 있다. 앞의 두 축과 달리 WebSocket이라 **고객 브라우저가 인프라 도메인에 직접 접속**하는 형태가 되고
-(REST는 종전대로 데모 백엔드가 프록시한다), 챗봇([`07-auth-and-chatbot.md`](07-auth-and-chatbot.md) §2)이 처리하다
-상담원 연결로 전환되는 시점에 룸을 만드는 구성이다. 데모 측 구현 착수 기준은 **계약이 v1으로 박제되는 시점**이며,
-그 전까지는 인프라 측 선결 조건(WAF 경로 예외, 게이트웨이 CORS 다중 오리진, 상담원 계정·콘솔) 해소를 기다린다.
+인프라 chat-server를 이용한 **1:1 실시간 고객 상담**이 세 번째 위임 축으로 붙었다. 계약은 초안(draft v0.95)을
+거쳐 **v1.1**까지 올라갔고, 2026-08-05 개정에서 룸 생성에 `customerName`을 함께 싣는 것이 추가됐다.
+
+앞의 두 축과 달리 **WebSocket 구간은 고객 브라우저가 인프라 도메인에 직접 접속**한다(REST는 종전대로 데모
+백엔드가 프록시한다). 룸 생성도 프런트가 직접 부르지 않는다 — 프런트는 데모 서버에 빈 바디로 요청하고,
+**데모 서버가 `customerName`을 정규화해 채운 뒤** 인프라로 넘긴다. 정규화에 실패하면 빈 문자열이 아니라
+`null`을 보내고, 그래도 룸 생성 자체는 막지 않는다.
+
+챗봇이 처리하다 상담원 연결로 전환되는 시점에 룸이 만들어지며, **연결 앞단의 문진(허들)·세션 지속·복원
+절차는 [`07-auth-and-chatbot.md`](07-auth-and-chatbot.md) §5·§6이 정본**이다. 이 문서는 인프라 접점만 다룬다.

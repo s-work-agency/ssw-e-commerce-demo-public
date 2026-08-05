@@ -1,11 +1,13 @@
 # 운영 플로우 (Ops Flows)
 
-> 상태: ✅ 확정 · 최종수정: 2026-08-02
+> 상태: ✅ 확정 · 최종수정: 2026-08-05
 
-재고 임계 알림, 관리 행위 감사 기록, 주문확인 메일 세 갈래를 다룬다.
-셋 다 "업무 트랜잭션에 어떻게 얹히는가"가 핵심이라, 트랜잭션 경계를 다이어그램에 같이 그렸다.
+재고 임계 알림, 관리 행위 감사 기록, 주문확인 메일, 챗봇 대화 회수 관리 네 갈래를 다룬다.
+앞의 셋은 "업무 트랜잭션에 어떻게 얹히는가"가 핵심이라 트랜잭션 경계를 다이어그램에 같이 그렸고,
+넷째는 **관리자 조작이 고객 화면에 언제 도달하는가**가 핵심이라 그 전파 경로를 그렸다.
 
 > 이미지 버전: [`assets/diagrams/06-ops-flows-1.svg`](assets/diagrams/06-ops-flows-1.svg) · [`-2.svg`](assets/diagrams/06-ops-flows-2.svg) · [`-3.svg`](assets/diagrams/06-ops-flows-3.svg)
+> — §4 다이어그램은 아직 SVG로 뽑지 않았다(다음 일괄 익스포트 때 `-4.svg`로 추가).
 
 ---
 
@@ -177,3 +179,88 @@ sequenceDiagram
 
 메일 이벤트를 발행하는 곳은 주문 생성 경로 한 곳뿐이다 — 관리자 상태 변경 경로에는 메일이 없고
 알림(`notifications`)만 생성된다(§[`03-order-flow.md`](03-order-flow.md)).
+
+---
+
+## 4. 챗봇 대화 회수 관리
+
+```mermaid
+%%{init: {"theme":"base","fontFamily":"Pretendard, Malgun Gothic, sans-serif","themeVariables":{"fontSize":"14px","primaryColor":"#DBEAFE","primaryBorderColor":"#1D4ED8","primaryTextColor":"#0F172A","lineColor":"#1D4ED8","secondaryColor":"#FEF3C7","tertiaryColor":"#DCFCE7","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1","noteBkgColor":"#FEF3C7","noteBorderColor":"#D97706","actorBkg":"#DBEAFE","actorBorder":"#1D4ED8","actorTextColor":"#0F172A","signalColor":"#1D4ED8","signalTextColor":"#0F172A","labelBoxBkgColor":"#DBEAFE","labelBoxBorderColor":"#1D4ED8","altSectionBkgColor":"#F8FAFC"},"flowchart":{"curve":"basis","htmlLabels":true,"padding":12}}}%%
+%% 공통 브랜드 테마 — architecture/*.md 전 다이어그램에 동일한 init 블록이 들어간다. 색을 바꿀 때는 이 폴더 전 파일을 일괄 치환할 것.
+sequenceDiagram
+    autonumber
+    actor C as 고객
+    participant W as 사용자 웹<br/>챗봇 위젯
+    participant S as 데모 서버<br/>chat_usage
+    actor A as 관리자
+    participant AW as 관리자 웹<br/>/chatbot
+
+    C->>W: 챗봇 열기
+    W->>S: 잔여 회수 조회 (세션 키 쿠키)
+    S-->>W: 한도 · 사용 · 보너스 · 잔여
+
+    loop 대화
+        C->>W: 질문
+        W->>S: 회수 1 소비
+        alt 잔여 있음
+            S-->>W: 소비 성공 · 남은 회수
+            W-->>C: 답변
+        else 소진
+            S-->>W: 한도 초과
+            W-->>C: 상담 연결 유도 · 입력 잠금
+        end
+    end
+
+    Note over W,S: 상태 조회 · 주문 선택 버튼 · 고정 안내는<br/>회수를 소비하지 않는다
+
+    A->>AW: 세션 목록 열기
+    AW->>S: GET /admin/chat-usage<br/>ADMIN 전용 · 최근 활동순 페이징
+    A->>AW: 초기화 또는 보너스 부여
+    AW->>S: reset(used_count=0) / bonus(+1~50)
+    Note over S: 행을 지우지 않고 bonus도 남긴다 —<br/>세션 키가 살아 있어야 고객 쿠키와 이어진다
+
+    C->>W: 다음 질문
+    W->>S: 회수 1 소비
+    S-->>W: 늘어난 잔여로 통과
+    Note over C,W: 고객은 새로고침하지 않았다.<br/>매 메시지가 서버에 물어보므로 다음 턴부터 바로 반영된다
+
+    W-xS: (서버 불통)
+    Note over W: fail-open — 대화는 막지 않고<br/>잔여 표시만 "확인 불가"로 낮춘다
+```
+
+대화 회수는 **매 메시지마다 서버에 물어보는 구조**다. 클라이언트가 잔여 회수를 들고 있다가 깎는 방식이
+아니라서, 관리자가 값을 바꾸면 **고객이 새로고침하지 않아도 다음 메시지부터 그대로 반영**된다.
+푸시도, 폴링도, 소켓도 없이 전파가 즉시인 것은 애초에 클라이언트에 상태를 두지 않았기 때문이다.
+관리자가 실시간으로 고객의 남은 회수를 조정하는 장면 자체가 시연 포인트라, 이 전파 지연을 없애는 것이
+설계 목표였다.
+
+| 항목 | 값 |
+|---|---|
+| 기본 한도 | 세션당 10회 (서버 상수 — 바꾸면 기존 세션에도 즉시 적용) |
+| 잔여 계산 | `기본 한도 + bonus_count − used_count` |
+| 고객용 API | `GET /api/v1/chat-usage/{sessionKey}` 조회 · `POST .../consume` 소비 |
+| 관리자 API | `GET /api/v1/admin/chat-usage` · `POST .../{sessionKey}/reset` · `POST .../{sessionKey}/bonus` |
+| 관리자 화면 | 관리자 웹 `/chatbot` — **`ADMIN` 전용** |
+| 관리자 조작 | 세션 목록 조회 · **사용 회수 초기화** · **보너스 부여(+1~50)** |
+| 클라이언트가 들고 있는 것 | **세션 키 하나뿐**(httpOnly 쿠키, UUID v4, 1시간) — 회수 값은 저장하지 않는다 |
+| 원장 | `chat_usage` (내부 데이터 모델 설계 문서(비공개) §3.18) |
+
+> ⚠️ **관리자 챗봇 화면만 `ADMIN` 전용이다.** `/api/v1/admin/**`의 일반 규칙은 staff 3역할을 통과시키지만,
+> 이 세 엔드포인트에는 `@PreAuthorize("hasRole('ADMIN')")`가 따로 붙어 있고 관리자 웹도 같은 조건으로
+> 메뉴를 가린다(아니면 대시보드로 되돌린다). 고객의 이용 한도를 조정하는 조작이라 상품·리뷰 관리보다
+> 좁게 잡았다.
+
+세션 목록에는 세션 키(축약) · 연결된 사용자(이메일 또는 "익명") · 사용/한도와 잔여 · 보너스 · 최근 활동 시각이
+한 줄로 나오고, 정렬은 **최근 활동순**이다. 방금 대화한 고객을 시연 중에 바로 집어내야 하기 때문이다.
+
+**회수를 소비하지 않는 호출**을 구분한 것이 이 설계의 두 번째 축이다. 패널을 열 때의 LLM 상태 조회,
+주문 선택 같은 버튼 분기, 고정 안내 문구는 모델을 부르지 않거나 근거 조회만 하므로 회수를 깎지 않는다.
+사용자가 "아무것도 안 물어봤는데 회수가 줄었다"고 느끼는 순간 이 제한은 시연 포인트가 아니라 결함이 된다.
+
+> **fail-open은 의도된 선택이다.** 사용량 조회·소비가 실패하면(서버 불통·타임아웃) 대화를 막지 않고
+> 그냥 통과시킨다. 잔여 표시만 "확인 불가"로 낮춘다. 회수 제한은 남용 방지가 아니라 **연출 장치**이므로,
+> 그것 때문에 시연 중 챗봇이 통째로 멈추는 쪽이 훨씬 큰 손해다. 챗봇 오프라인 폴백
+> ([`07-auth-and-chatbot.md`](07-auth-and-chatbot.md) §3)과 같은 원칙이다.
+
+> 초기화는 `used_count`를 0으로 되돌리는 **갱신**이지 행 삭제가 아니다. 행을 지우면 고객 브라우저에
+> 남아 있는 세션 키가 어느 행과도 이어지지 않아, 다음 메시지에서 새 행이 생기며 보너스 이력이 끊긴다.

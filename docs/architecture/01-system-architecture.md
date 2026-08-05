@@ -127,6 +127,9 @@ OpenAI 호환 API로 gemma 26B(reasoning)를 서빙한다. **평소에는 꺼져
   staff 계정은 시드 또는 `ADMIN` 권한자의 별도 발급 경로로만 생긴다.
 - 관리자 웹·관리자 Windows는 staff role만 통과시키고, `CUSTOMER` 토큰은 로그인 단계에서 거부한다.
 - 토큰 만료(`JWT_EXPIRATION_MS`)·서명 키(`JWT_SECRET`)는 환경변수로 주입한다(값은 레포에 두지 않는다).
+- 소셜 로그인 4종(네이버·카카오·Google·Meta)은 **실제 OAuth2 연동이 아니라 가상 로그인 모달**이고,
+  승인하면 데모 계정으로 실제 JWT 로그인이 일어난다([`07-auth-and-chatbot.md`](07-auth-and-chatbot.md) §2).
+  로그인·가입 성공 후 목적지는 메인(`/`)이다.
 
 ---
 
@@ -163,6 +166,11 @@ graph LR
 > 자연어 통계(실험실)는 NL→SQL을 그대로 실행하지 않고 **가드를 거친 뒤 실행**한다.
 > 가드 규칙의 상세는 admin-web 구현을 정본으로 본다.
 
+챗봇에는 위 4단계 외에 **세션당 대화 회수 제한**(서버 `chat_usage`가 정본, 관리자가 실시간 조정)과
+**상담원 실시간 채팅으로의 전환**(연결 전 필수 문진)이 붙어 있다. 둘 다
+[`07-auth-and-chatbot.md`](07-auth-and-chatbot.md) §4~§6이 정본이고, 상담 채팅의 인프라 접점은
+[`09-infra-integration.md`](09-infra-integration.md) §5가 다룬다.
+
 ---
 
 ## 5. 다이어그램 문서
@@ -176,8 +184,8 @@ graph LR
 | [`03-order-flow.md`](03-order-flow.md) | 주문 상태머신 · SSW PAY 결제 시퀀스 · 취소 원복 |
 | [`04-review-flow.md`](04-review-flow.md) | 리뷰 라이프사이클 · 작성 자격 검증 |
 | [`05-reward-flows.md`](05-reward-flows.md) | 멤버십 등급 산정 · 만보기 미션 · 가입 웰컴 혜택 |
-| [`06-ops-flows.md`](06-ops-flows.md) | 재고 임계 알림 래치 · 관리 행위 감사 기록 · 주문확인 메일 |
-| [`07-auth-and-chatbot.md`](07-auth-and-chatbot.md) | JWT 인증·역할 게이트 · 챗봇 파이프라인 (§3·§4 확장) |
+| [`06-ops-flows.md`](06-ops-flows.md) | 재고 임계 알림 래치 · 관리 행위 감사 기록 · 주문확인 메일 · 챗봇 대화 회수 관리 |
+| [`07-auth-and-chatbot.md`](07-auth-and-chatbot.md) | JWT 인증·역할 게이트 · 소셜 가상 로그인 · 챗봇 파이프라인 · 대화 회수 · 상담원 연결 (§3·§4 확장) |
 | [`08-verification-pipeline.md`](08-verification-pipeline.md) | 태스크→구현→검증 루프 · 인박스 협업 프로토콜 |
 | [`09-infra-integration.md`](09-infra-integration.md) | 공용 인프라 위임 — 인증 강등 · 이미지 파이프라인 · 관리자 업로드 |
 

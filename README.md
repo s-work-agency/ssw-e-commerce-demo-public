@@ -78,7 +78,13 @@ JVM 단위 테스트로 검증합니다.
 **AI 기능** — 챗봇(키워드 프리필터 → 분류 게이트 → 미니 RAG → 답변 생성 4단계), 자연어 통계
 실험실(NL→SQL, 가드 통과 후 실행), AI 브리핑, 문의 답변 초안. LLM 서버는 **평소 꺼진 상태가
 기본**이고, 응답이 없으면 네 기능 모두 규칙 기반 **오프라인 폴백으로 자동 강등**되어 시연이 끊기지
-않습니다.
+않습니다. 챗봇에는 세션당 대화 회수 제한이 붙어 있는데, 잔여 회수를 클라이언트가 아니라 **서버가
+정본으로 들고 있어** 관리자가 값을 조정하면 고객이 새로고침하지 않아도 다음 메시지부터 반영됩니다.
+
+**상담원 연결** — 챗봇에서 상담사 **1:1 실시간 채팅**으로 넘어갈 수 있습니다. 연결 앞에 필수 문진
+(카테고리 → 관련 주문 → 상세 설명)을 두어 유입을 조절하면서 상담원이 첫 줄부터 맥락을 갖고 시작하게
+하고, 대기·진행 상태는 위젯을 닫았다 열어도 복원됩니다. 채팅 자체는 목업이 아니라 공용 인프라
+chat-server에 위임한 실동작 연동입니다.
 
 **리워드** — 포인트 원장(`point_ledger`)이 언제나 진실이고 잔액 컬럼은 같은 트랜잭션에서 갱신되는
 캐시입니다. 멤버십 등급 산정, 만보기(걸음수) 미션, 가입 웰컴 혜택이 이 원장 위에 얹힙니다.
@@ -131,8 +137,8 @@ JVM 단위 테스트로 검증합니다.
 | [`docs/architecture/03-order-flow.md`](docs/architecture/03-order-flow.md) | 주문 상태머신 · SSW PAY 결제 시퀀스 · 취소 원복 |
 | [`docs/architecture/04-review-flow.md`](docs/architecture/04-review-flow.md) | 리뷰 라이프사이클 · 작성 자격 검증 |
 | [`docs/architecture/05-reward-flows.md`](docs/architecture/05-reward-flows.md) | 멤버십 등급 산정 · 만보기 미션 · 가입 웰컴 혜택 |
-| [`docs/architecture/06-ops-flows.md`](docs/architecture/06-ops-flows.md) | 재고 임계 알림 래치 · 관리 행위 감사 기록 · 주문확인 메일 |
-| [`docs/architecture/07-auth-and-chatbot.md`](docs/architecture/07-auth-and-chatbot.md) | JWT 인증·역할 게이트 · 챗봇 파이프라인 (구현 수준) |
+| [`docs/architecture/06-ops-flows.md`](docs/architecture/06-ops-flows.md) | 재고 임계 알림 래치 · 관리 행위 감사 기록 · 주문확인 메일 · 챗봇 대화 회수 관리 |
+| [`docs/architecture/07-auth-and-chatbot.md`](docs/architecture/07-auth-and-chatbot.md) | JWT 인증·역할 게이트 · 소셜 가상 로그인 · 챗봇 파이프라인 · 대화 회수 · 상담원 연결 (구현 수준) |
 | [`docs/architecture/08-verification-pipeline.md`](docs/architecture/08-verification-pipeline.md) | 태스크→구현→검증 루프 · 인박스 협업 프로토콜 |
 | [`docs/architecture/09-infra-integration.md`](docs/architecture/09-infra-integration.md) | 공용 인프라 위임 — 인증 강등 · 이미지 파이프라인 · 관리자 업로드 |
 | [`docs/planning/01-project-brief.md`](docs/planning/01-project-brief.md) | 프로젝트 목적 · 메인 포인트 · 확정 사항 |
