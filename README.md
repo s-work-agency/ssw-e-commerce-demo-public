@@ -14,32 +14,53 @@
 ## 시스템 구성
 
 ```mermaid
+%%{init: {"theme":"base","fontFamily":"Pretendard, Malgun Gothic, sans-serif","themeVariables":{"fontSize":"14px","primaryColor":"#DBEAFE","primaryBorderColor":"#1D4ED8","primaryTextColor":"#0F172A","lineColor":"#1D4ED8","secondaryColor":"#FEF3C7","tertiaryColor":"#DCFCE7","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1","noteBkgColor":"#FEF3C7","noteBorderColor":"#D97706","actorBkg":"#DBEAFE","actorBorder":"#1D4ED8","actorTextColor":"#0F172A","signalColor":"#1D4ED8","signalTextColor":"#0F172A","labelBoxBkgColor":"#DBEAFE","labelBoxBorderColor":"#1D4ED8","altSectionBkgColor":"#F8FAFC"},"flowchart":{"curve":"basis","htmlLabels":true,"padding":12}}}%%
+%% 공통 브랜드 테마 — architecture/*.md 전 다이어그램에 동일한 init 블록이 들어간다. 색을 바꿀 때는 이 폴더 전 파일을 일괄 치환할 것.
 graph TB
     subgraph clients["클라이언트"]
+        android["안드로이드 앱<br/>Kotlin · WebView 셸"]
         web["사용자 웹<br/>Next.js"]
         adminweb["관리자 웹<br/>Next.js"]
         wpf["관리자 Windows<br/>WPF (.NET 8)"]
-        android["안드로이드 앱<br/>Kotlin"]
     end
 
     server["API 서버<br/>Spring Boot 3.4"]
     db[("MariaDB 11")]
     llm["자체 LLM 서빙 서버<br/>vLLM · OpenAI 호환<br/>※ 평소 오프라인 → 자동 강등"]
 
+    subgraph infra["공용 인프라 — 데모가 위임한 3축"]
+        gw["게이트웨이<br/>WAF IP 허용목록"]
+        auth["auth-server<br/>RS256 발급 · JWKS"]
+        file["file-server · media<br/>이미지 원본 · 파생본"]
+        chat["chat-server<br/>실시간 상담"]
+        gw --> auth
+        gw --> file
+        gw --> chat
+    end
+
+    android -->|"WebView 로드"| web
     web -->|"REST /api/v1"| server
     adminweb -->|"REST /api/v1 (admin)"| server
     wpf -->|"REST /api/v1 (admin)"| server
-    android -->|"REST /api/v1"| server
     server --> db
 
     web -.->|"챗봇 분류·RAG 답변"| llm
     adminweb -.->|"NL 통계·브리핑·문의 초안"| llm
+
+    server -.->|"인증 위임 · 이미지 업로드<br/>상담 룸 생성"| gw
+    web -.->|"이미지 GET · 무인증 공개 경로"| file
+    web -.->|"상담 WebSocket · 브라우저 직접 접속"| chat
 
     subgraph mocks["데모 목업 (외부 연동 없음)"]
         pay["SSW PAY 결제"]
         login["데모 계정 로그인"]
     end
     web --- mocks
+
+    classDef step fill:#DBEAFE,stroke:#1D4ED8,stroke-width:1.5px,color:#0F172A
+    classDef ext fill:#F1F5F9,stroke:#94A3B8,stroke-width:1.5px,color:#0F172A
+    class android,web,adminweb,wpf,server,db step
+    class gw,auth,file,chat,llm,pay,login ext
 ```
 
 실선은 데모 동작에 반드시 필요한 경로, 점선은 **없어도 기능이 강등된 채로 동작**하는
@@ -98,22 +119,162 @@ chat-server에 위임한 실동작 연동입니다.
 
 ### 바운디드 컨텍스트 경계
 
-![바운디드 컨텍스트 경계](docs/architecture/assets/diagrams/02-data-model-erd-2.svg)
+```mermaid
+%%{init: {"theme":"base","fontFamily":"Pretendard, Malgun Gothic, sans-serif","themeVariables":{"fontSize":"14px","primaryColor":"#DBEAFE","primaryBorderColor":"#1D4ED8","primaryTextColor":"#0F172A","lineColor":"#1D4ED8","secondaryColor":"#FEF3C7","tertiaryColor":"#DCFCE7","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1","noteBkgColor":"#FEF3C7","noteBorderColor":"#D97706","actorBkg":"#DBEAFE","actorBorder":"#1D4ED8","actorTextColor":"#0F172A","signalColor":"#1D4ED8","signalTextColor":"#0F172A","labelBoxBkgColor":"#DBEAFE","labelBoxBorderColor":"#1D4ED8","altSectionBkgColor":"#F8FAFC"},"flowchart":{"curve":"basis","htmlLabels":true,"padding":12}}}%%
+%% 공통 브랜드 테마 — architecture/*.md 전 다이어그램에 동일한 init 블록이 들어간다. 색을 바꿀 때는 이 폴더 전 파일을 일괄 치환할 것.
+flowchart LR
+    subgraph auth["AUTH · 로그인 서버로 분리 예정"]
+        users["users"]
+    end
+
+    subgraph commerce["COMMERCE · 커머스 본체"]
+        direction TB
+        cOrders["orders · reviews<br/>user_coupons · wishlists<br/>inquiries · user_addresses<br/>order_status_history · chat_usage"]
+        cCore["categories → products<br/>coupons · order_items"]
+    end
+
+    subgraph reward["REWARD"]
+        ledger["point_ledger<br/>user_daily_steps"]
+    end
+
+    subgraph file["FILE · 파일 서버로 분리 예정"]
+        assets["file_assets"]
+    end
+
+    subgraph noti["NOTIFICATION · 알림 서버로 분리 예정"]
+        notis["notifications<br/>device_tokens"]
+    end
+
+    subgraph ops["운영"]
+        audit["admin_audit_events"]
+    end
+
+    subgraph store["STORE · 완전 독립"]
+        stores["stores"]
+    end
+
+    users -. "user_id (FK 없음)" .-> cOrders
+    users -. "user_id" .-> ledger
+    users -. "owner_user_id" .-> assets
+    users -. "user_id" .-> notis
+    users -. "actor_user_id" .-> audit
+    assets -. "profile_image_asset_id" .-> users
+    cOrders --- cCore
+
+    classDef ctxAuth fill:#DBEAFE,stroke:#1D4ED8,stroke-width:1.5px,color:#0F172A
+    classDef ctxCore fill:#DCFCE7,stroke:#16A34A,stroke-width:1.5px,color:#052E16
+    classDef ctxSplit fill:#FEF3C7,stroke:#D97706,stroke-width:1.5px,color:#451A03
+    classDef ctxIndep fill:#F1F5F9,stroke:#94A3B8,stroke-width:1.5px,color:#0F172A
+    class users ctxAuth
+    class cOrders,cCore,ledger ctxCore
+    class assets,notis ctxSplit
+    class stores,audit ctxIndep
+```
 
 ### 주문 상태머신
 
-![주문 상태머신](docs/architecture/assets/diagrams/03-order-flow-1.svg)
+```mermaid
+%%{init: {"theme":"base","fontFamily":"Pretendard, Malgun Gothic, sans-serif","themeVariables":{"fontSize":"14px","primaryColor":"#DBEAFE","primaryBorderColor":"#1D4ED8","primaryTextColor":"#0F172A","lineColor":"#1D4ED8","secondaryColor":"#FEF3C7","tertiaryColor":"#DCFCE7","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1","noteBkgColor":"#FEF3C7","noteBorderColor":"#D97706","actorBkg":"#DBEAFE","actorBorder":"#1D4ED8","actorTextColor":"#0F172A","signalColor":"#1D4ED8","signalTextColor":"#0F172A","labelBoxBkgColor":"#DBEAFE","labelBoxBorderColor":"#1D4ED8","altSectionBkgColor":"#F8FAFC"},"flowchart":{"curve":"basis","htmlLabels":true,"padding":12}}}%%
+%% 공통 브랜드 테마 — architecture/*.md 전 다이어그램에 동일한 init 블록이 들어간다. 색을 바꿀 때는 이 폴더 전 파일을 일괄 치환할 것.
+stateDiagram-v2
+    direction LR
+    [*] --> pending : 주문 생성<br/>재고 차감·쿠폰 사용·포인트 차감
+    pending --> paid : mock 결제 완료<br/>(같은 트랜잭션 즉시 전환)
+    paid --> shipped : 관리자 전환<br/>trackingNo·carrier 필수
+    shipped --> delivered : 관리자 전환<br/>→ ORDER_EARN 적립
+    pending --> cancelled : 고객 취소
+    paid --> cancelled : 고객 취소
+    delivered --> [*]
+    cancelled --> [*]
+
+    note right of shipped
+        shipped 이후에는 취소 불가.
+        delivered·cancelled는 종착 상태로
+        나가는 전이가 모두 거부된다.
+    end note
+```
 
 ### 챗봇 파이프라인
 
-![챗봇 파이프라인](docs/architecture/assets/diagrams/07-auth-and-chatbot-2.svg)
+```mermaid
+%%{init: {"theme":"base","fontFamily":"Pretendard, Malgun Gothic, sans-serif","themeVariables":{"fontSize":"14px","primaryColor":"#DBEAFE","primaryBorderColor":"#1D4ED8","primaryTextColor":"#0F172A","lineColor":"#1D4ED8","secondaryColor":"#FEF3C7","tertiaryColor":"#DCFCE7","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1","noteBkgColor":"#FEF3C7","noteBorderColor":"#D97706","actorBkg":"#DBEAFE","actorBorder":"#1D4ED8","actorTextColor":"#0F172A","signalColor":"#1D4ED8","signalTextColor":"#0F172A","labelBoxBkgColor":"#DBEAFE","labelBoxBorderColor":"#1D4ED8","altSectionBkgColor":"#F8FAFC"},"flowchart":{"curve":"basis","htmlLabels":true,"padding":12}}}%%
+%% 공통 브랜드 테마 — architecture/*.md 전 다이어그램에 동일한 init 블록이 들어간다. 색을 바꿀 때는 이 폴더 전 파일을 일괄 치환할 것.
+flowchart TD
+    q(["POST /api/chat<br/>{message}"]) --> parse["요청 검증<br/>본문 4KB · 입력 300자 이하<br/>허용 키는 message 하나"]
+    parse --> sess{"대화 회수 소비<br/>서버 chat_usage 정본 (§4)"}
+    sess -->|"잔여 없음"| limit["429 · mode=limit<br/>상담 연결 유도"]
+    sess -.->|"사용량 서버 불통<br/>fail-open"| pre
+
+    sess -->|"소비 성공"| pre{"① 키워드 프리필터<br/>명백한 비쇼핑 요청?<br/>(코딩·레시피·글쓰기·주식 등)"}
+    pre -->|"해당"| refuse["mode=refusal<br/>고정 거절 문구 · 모델 호출 없음"]
+
+    pre -->|"아님"| cls["② 분류 게이트<br/>temperature 0 · 512토큰<br/>쇼핑 질문인가 YES/NO"]
+    cls --> yes{"YES?"}
+    yes -->|"아니오"| refuse
+
+    yes -->|"예"| rag["③ 미니 RAG (병렬)"]
+    rag --> faq["정적 FAQ·정책 10건<br/>키워드 점수 상위 4건"]
+    rag --> prod["상품 API 조회 후<br/>토큰 스코어링 상위 3건<br/>→ 상세 재조회 (3초 타임아웃)"]
+    faq --> gen
+    prod --> gen["④ 답변 생성<br/>temperature 0.2 · 2048토큰<br/>근거 컨텍스트 주입"]
+    gen --> mk["⑤ 상품 마커 치환<br/>허용목록 대조 후 블록 버튼 행<br/>문장 경계에서만 분리 (§3.3)"]
+    mk --> ok["mode=answer<br/>+ 상품 블록 · 관련 링크"]
+
+    cls -.->|"연결 실패 · 타임아웃 · non-OK"| off["mode=offline (HTTP 200)<br/>고정 문구 3종 회전"]
+    gen -.->|"동일"| off
+    gen -.->|"응답이 비었거나<br/>추론 태그 유출"| refuse
+
+    llm[["자체 LLM 서빙 서버<br/>OpenAI 호환 /v1<br/>모델은 /v1/models 로 감지<br/>5분 캐시"]]
+    cls -.-> llm
+    gen -.-> llm
+
+    classDef step fill:#DBEAFE,stroke:#1D4ED8,stroke-width:1.5px,color:#0F172A
+    classDef gate fill:#FEF3C7,stroke:#D97706,stroke-width:1.5px,color:#451A03
+    classDef fail fill:#FFE4E6,stroke:#E11D48,stroke-width:1.5px,color:#4C0519
+    classDef ok fill:#DCFCE7,stroke:#16A34A,stroke-width:1.5px,color:#052E16
+    classDef ext fill:#F1F5F9,stroke:#94A3B8,stroke-width:1.5px,color:#0F172A
+    class q,parse,cls,rag,faq,prod,gen,mk step
+    class sess,pre,yes gate
+    class refuse,limit fail
+    class ok ok
+    class off,llm ext
+```
 
 ### 태스크 → 구현 → 검증 루프
 
-![검증 파이프라인](docs/architecture/assets/diagrams/08-verification-pipeline-1.svg)
+```mermaid
+%%{init: {"theme":"base","fontFamily":"Pretendard, Malgun Gothic, sans-serif","themeVariables":{"fontSize":"14px","primaryColor":"#DBEAFE","primaryBorderColor":"#1D4ED8","primaryTextColor":"#0F172A","lineColor":"#1D4ED8","secondaryColor":"#FEF3C7","tertiaryColor":"#DCFCE7","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1","noteBkgColor":"#FEF3C7","noteBorderColor":"#D97706","actorBkg":"#DBEAFE","actorBorder":"#1D4ED8","actorTextColor":"#0F172A","signalColor":"#1D4ED8","signalTextColor":"#0F172A","labelBoxBkgColor":"#DBEAFE","labelBoxBorderColor":"#1D4ED8","altSectionBkgColor":"#F8FAFC"},"flowchart":{"curve":"basis","htmlLabels":true,"padding":12}}}%%
+%% 공통 브랜드 테마 — architecture/*.md 전 다이어그램에 동일한 init 블록이 들어간다. 색을 바꿀 때는 이 폴더 전 파일을 일괄 치환할 것.
+flowchart TD
+    req(["오너 요구사항"]) --> design["총괄 세션: 태스크 설계<br/>목표 · 완료 기준(검증 항목) · 제약"]
+    design --> dispatch["인박스에 태스크 투입<br/>ssw-inbox/&lt;수신자&gt;/ 루트에 파일 생성"]
 
-전체 SVG 21장은 [`docs/architecture/assets/diagrams/`](docs/architecture/assets/diagrams/)에
-문서명-순번으로 들어 있습니다.
+    dispatch --> impl["구현<br/>코덱스 대표 세션 또는 클로드 opus 서브에이전트"]
+    impl --> report["구현 보고<br/>'기동 확인' 수준까지만<br/>요구사항 충족 판정은 하지 않는다"]
+
+    report --> vcode["① 코드 검증 (sonnet)<br/>변경 파일 대조 · 정적 점검<br/>gradlew test · dotnet test<br/>npm run lint · npm run build"]
+    vcode --> vrun["② 런타임 검증<br/>브라우저(웹·관리자 웹)<br/>API 직접 호출<br/>WPF 데스크톱 · 안드로이드 에뮬레이터"]
+
+    vrun --> verdict{"완료 기준을<br/>모두 충족했는가?"}
+    verdict -->|"실패"| fail["실패 항목만 회신<br/>검증 세션은 고치지 않는다"]
+    fail --> impl
+    verdict -->|"통과"| commit["구현 주체가 커밋"]
+    commit --> push["push (오너 승인 영역)"]
+
+    classDef step fill:#DBEAFE,stroke:#1D4ED8,stroke-width:1.5px,color:#0F172A
+    classDef gate fill:#FEF3C7,stroke:#D97706,stroke-width:1.5px,color:#451A03
+    classDef failc fill:#FFE4E6,stroke:#E11D48,stroke-width:1.5px,color:#4C0519
+    classDef ok fill:#DCFCE7,stroke:#16A34A,stroke-width:1.5px,color:#052E16
+    classDef ext fill:#F1F5F9,stroke:#94A3B8,stroke-width:1.5px,color:#0F172A
+    class design,dispatch,impl,report,vcode,vrun step
+    class verdict gate
+    class fail failc
+    class commit,push ok
+    class req ext
+```
+
+전체 다이어그램은 [`docs/architecture/`](docs/architecture/)의 각 문서 본문에 **mermaid 인라인**으로
+들어 있습니다 — 깃허브가 그대로 렌더하므로 별도의 이미지 익스포트는 두지 않습니다.
 
 ## 개발 방식 — 멀티 에이전트 협업
 

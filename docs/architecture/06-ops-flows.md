@@ -6,9 +6,6 @@
 앞의 셋은 "업무 트랜잭션에 어떻게 얹히는가"가 핵심이라 트랜잭션 경계를 다이어그램에 같이 그렸고,
 넷째는 **관리자 조작이 고객 화면에 언제 도달하는가**가 핵심이라 그 전파 경로를 그렸다.
 
-> 이미지 버전: [`assets/diagrams/06-ops-flows-1.svg`](assets/diagrams/06-ops-flows-1.svg) · [`-2.svg`](assets/diagrams/06-ops-flows-2.svg) · [`-3.svg`](assets/diagrams/06-ops-flows-3.svg)
-> — §4 다이어그램은 아직 SVG로 뽑지 않았다(다음 일괄 익스포트 때 `-4.svg`로 추가).
-
 ---
 
 ## 1. 재고 임계 알림 래치

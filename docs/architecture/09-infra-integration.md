@@ -6,9 +6,6 @@
 데모 자체 구현이던 것을 인프라로 옮긴 부분이라, [`07-auth-and-chatbot.md`](07-auth-and-chatbot.md) §1(로컬 HS256 JWT)은
 **폴백 경로로 남아 있는 서술**로 읽어야 한다. 현재 기본 경로는 이 문서가 정본이다.
 
-> 이미지 버전: [`assets/diagrams/09-infra-integration-1.svg`](assets/diagrams/09-infra-integration-1.svg) · [`-2.svg`](assets/diagrams/09-infra-integration-2.svg) · [`-3.svg`](assets/diagrams/09-infra-integration-3.svg) · [`-4.svg`](assets/diagrams/09-infra-integration-4.svg)
-> — `-1.svg`(전체 구성도)는 상담 채팅 축이 추가된 2026-08-05 개정이 아직 반영되지 않았다. 다음 일괄 익스포트 때 갱신한다.
-
 ---
 
 ## 1. 공용 인프라와의 관계

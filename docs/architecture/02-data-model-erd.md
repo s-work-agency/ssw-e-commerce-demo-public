@@ -1,12 +1,10 @@
 # 데이터 모델 ERD (Data Model ERD)
 
-> 상태: ✅ 확정 · 최종수정: 2026-08-02
+> 상태: ✅ 확정 · 최종수정: 2026-08-05
 
 내부 데이터 모델 설계 문서(비공개)가 정의한 스키마를 **관계 다이어그램**으로 옮긴 문서다.
 컬럼 정본·정책 서술은 그쪽이 기준이고, 이 문서는 **엔티티가 서로 어떻게 물려 있는지**만 다룬다.
 다이어그램은 서버 엔티티(`ssw-e-commerce-demo-server/.../domain/*.java`)의 실제 매핑을 대조해 그렸다.
-
-> 이미지 버전: [`assets/diagrams/02-data-model-erd-1.svg`](assets/diagrams/02-data-model-erd-1.svg) · [`-2.svg`](assets/diagrams/02-data-model-erd-2.svg)
 
 ---
 
@@ -28,6 +26,7 @@ erDiagram
     users ||..o{ wishlists : "논리참조 user_id"
     users ||..o{ admin_audit_events : "논리참조 actor_user_id"
     users ||..o{ file_assets : "논리참조 owner_user_id"
+    users |o..o{ chat_usage : "논리참조 user_id (nullable)"
     file_assets |o..o| users : "논리참조 profile_image_asset_id"
 
     categories ||--o{ categories : "parent_id 자기참조 2-depth"
@@ -231,6 +230,15 @@ erDiagram
         int product_id FK ""
         datetime created_at "실삭제 허용"
     }
+    chat_usage {
+        bigint id PK ""
+        varchar session_key UK "UUID v4 · 쿠키가 싣는 유일한 값"
+        bigint user_id "논리참조 AUTH 경계 · nullable"
+        int used_count "소비한 대화 회수"
+        int bonus_count "관리자 부여분"
+        datetime created_at ""
+        datetime updated_at "최근 활동 정렬용"
+    }
     stores {
         bigint id PK ""
         varchar name "완전 독립 테이블"
@@ -288,7 +296,7 @@ flowchart LR
 
     subgraph commerce["COMMERCE · 커머스 본체"]
         direction TB
-        cOrders["orders · reviews<br/>user_coupons · wishlists<br/>inquiries · user_addresses<br/>order_status_history"]
+        cOrders["orders · reviews<br/>user_coupons · wishlists<br/>inquiries · user_addresses<br/>order_status_history · chat_usage"]
         cCore["categories → products<br/>coupons · order_items"]
     end
 

@@ -5,8 +5,6 @@
 리뷰 상태 라이프사이클과 작성 자격 검증 두 갈래를 다룬다.
 다이어그램은 `ReviewService`·`AdminReviewController` 구현을 대조해 그렸다.
 
-> 이미지 버전: [`assets/diagrams/04-review-flow-1.svg`](assets/diagrams/04-review-flow-1.svg) · [`-2.svg`](assets/diagrams/04-review-flow-2.svg)
-
 ---
 
 ## 1. 리뷰 상태 라이프사이클

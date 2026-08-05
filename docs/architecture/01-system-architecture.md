@@ -4,42 +4,66 @@
 
 클라이언트 4종 · API 서버 1종 · MariaDB · 외부 LLM 서빙으로 구성된 데모의 전체 구조를 정의한다.
 데이터 스키마 정본은 내부 데이터 모델 설계 문서(비공개)이며, 이 문서는 **구성 요소와 그 사이의 통신**을 다룬다.
-개별 도메인의 상태머신·시퀀스는 종류별 다이어그램 문서로 분리했다(§7).
+개별 도메인의 상태머신·시퀀스는 종류별 다이어그램 문서로 분리했다(§5).
 
 ---
 
 ## 1. 전체 구성도
 
 ```mermaid
+%%{init: {"theme":"base","fontFamily":"Pretendard, Malgun Gothic, sans-serif","themeVariables":{"fontSize":"14px","primaryColor":"#DBEAFE","primaryBorderColor":"#1D4ED8","primaryTextColor":"#0F172A","lineColor":"#1D4ED8","secondaryColor":"#FEF3C7","tertiaryColor":"#DCFCE7","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1","noteBkgColor":"#FEF3C7","noteBorderColor":"#D97706","actorBkg":"#DBEAFE","actorBorder":"#1D4ED8","actorTextColor":"#0F172A","signalColor":"#1D4ED8","signalTextColor":"#0F172A","labelBoxBkgColor":"#DBEAFE","labelBoxBorderColor":"#1D4ED8","altSectionBkgColor":"#F8FAFC"},"flowchart":{"curve":"basis","htmlLabels":true,"padding":12}}}%%
+%% 공통 브랜드 테마 — architecture/*.md 전 다이어그램에 동일한 init 블록이 들어간다. 색을 바꿀 때는 이 폴더 전 파일을 일괄 치환할 것.
 graph TB
     subgraph clients["클라이언트"]
+        android["안드로이드 앱<br/>Kotlin · WebView 셸"]
         web["사용자 웹<br/>Next.js"]
         adminweb["관리자 웹<br/>Next.js"]
         wpf["관리자 Windows<br/>WPF (.NET 8)"]
-        android["안드로이드 앱<br/>Kotlin"]
     end
 
     server["API 서버<br/>Spring Boot 3.4"]
     db[("MariaDB 11<br/>podman")]
     llm["자체 LLM 서빙 서버<br/>vLLM · OpenAI 호환<br/>※ 평소 오프라인 → 자동 강등"]
 
+    subgraph infra["공용 인프라 — 데모가 위임한 3축"]
+        gw["게이트웨이<br/>WAF IP 허용목록"]
+        auth["auth-server<br/>RS256 발급 · JWKS"]
+        file["file-server · media<br/>이미지 원본 · 파생본"]
+        chat["chat-server<br/>실시간 상담"]
+        gw --> auth
+        gw --> file
+        gw --> chat
+    end
+
+    android -->|"WebView 로드"| web
     web -->|"REST /api/v1"| server
     adminweb -->|"REST /api/v1 (admin)"| server
     wpf -->|"REST /api/v1 (admin)"| server
-    android -->|"REST /api/v1"| server
     server --> db
 
     web -.->|"챗봇 분류·RAG 답변"| llm
     adminweb -.->|"NL 통계·브리핑·문의 초안"| llm
+
+    server -.->|"인증 위임 · 이미지 업로드<br/>상담 룸 생성"| gw
+    web -.->|"이미지 GET · 무인증 공개 경로"| file
+    web -.->|"상담 WebSocket · 브라우저 직접 접속"| chat
 
     subgraph mocks["데모 목업 (외부 연동 없음)"]
         pay["SSW PAY 결제"]
         login["데모 계정 로그인"]
     end
     web --- mocks
+
+    classDef step fill:#DBEAFE,stroke:#1D4ED8,stroke-width:1.5px,color:#0F172A
+    classDef ext fill:#F1F5F9,stroke:#94A3B8,stroke-width:1.5px,color:#0F172A
+    class android,web,adminweb,wpf,server,db step
+    class gw,auth,file,chat,llm,pay,login ext
 ```
 
 실선은 데모 동작에 반드시 필요한 경로, 점선은 **없어도 기능이 강등된 채로 동작**하는 선택 경로다.
+공용 인프라가 점선인 것도 같은 이유다 — 인증은 로컬 HS256으로, 이미지는 로컬 정적으로 자동 강등된다
+([`09-infra-integration.md`](09-infra-integration.md) §1). 안드로이드 앱은 서버를 직접 부르지 않고
+사용자 웹을 WebView로 싣는 셸이라 API 화살표가 웹에서만 나간다(§2.4).
 
 ---
 
@@ -138,19 +162,27 @@ OpenAI 호환 API로 gemma 26B(reasoning)를 서빙한다. **평소에는 꺼져
 사용자 웹 챗봇은 모든 입력을 LLM에 그대로 던지지 않는다. 값싼 단계로 먼저 걸러내고,
 꼭 필요한 경우에만 모델을 호출하는 4단계 구성이다.
 아래는 개념도이며, 세션 한도·타임아웃·폴백 분기까지 그린 구현 수준 다이어그램은
-[`07-auth-and-chatbot.md`](07-auth-and-chatbot.md) §2에 있다.
+[`07-auth-and-chatbot.md`](07-auth-and-chatbot.md) §3에 있다.
 
 ```mermaid
+%%{init: {"theme":"base","fontFamily":"Pretendard, Malgun Gothic, sans-serif","themeVariables":{"fontSize":"14px","primaryColor":"#DBEAFE","primaryBorderColor":"#1D4ED8","primaryTextColor":"#0F172A","lineColor":"#1D4ED8","secondaryColor":"#FEF3C7","tertiaryColor":"#DCFCE7","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1","noteBkgColor":"#FEF3C7","noteBorderColor":"#D97706","actorBkg":"#DBEAFE","actorBorder":"#1D4ED8","actorTextColor":"#0F172A","signalColor":"#1D4ED8","signalTextColor":"#0F172A","labelBoxBkgColor":"#DBEAFE","labelBoxBorderColor":"#1D4ED8","altSectionBkgColor":"#F8FAFC"},"flowchart":{"curve":"basis","htmlLabels":true,"padding":12}}}%%
+%% 공통 브랜드 테마 — architecture/*.md 전 다이어그램에 동일한 init 블록이 들어간다. 색을 바꿀 때는 이 폴더 전 파일을 일괄 치환할 것.
 graph LR
     q["사용자 질문"] --> pre["① 키워드 프리필터"]
-    pre --> cls["② 분류 게이트"]
+    pre -->|"통과"| cls["② 분류 게이트"]
+    pre -->|"명백한 인사·잡담·비관련<br/>모델 호출 없이 처리"| out["응답"]
     cls --> rag["③ 미니 RAG<br/>(상품·FAQ 문서 검색)"]
     rag --> ans["④ 답변 생성"]
-    ans --> out["응답"]
+    ans --> out
 
     cls -.->|"LLM 서버 오프라인"| fb["오프라인 폴백<br/>(규칙 기반 응답)"]
     ans -.->|"LLM 서버 오프라인"| fb
     fb --> out
+
+    classDef step fill:#DBEAFE,stroke:#1D4ED8,stroke-width:1.5px,color:#0F172A
+    classDef ext fill:#F1F5F9,stroke:#94A3B8,stroke-width:1.5px,color:#0F172A
+    class pre,cls,rag,ans step
+    class q,out,fb ext
 ```
 
 1. **키워드 프리필터** — 명백한 인사·잡담·비관련 입력을 모델 호출 없이 처리한다.
@@ -189,8 +221,9 @@ graph LR
 | [`08-verification-pipeline.md`](08-verification-pipeline.md) | 태스크→구현→검증 루프 · 인박스 협업 프로토콜 |
 | [`09-infra-integration.md`](09-infra-integration.md) | 공용 인프라 위임 — 인증 강등 · 이미지 파이프라인 · 관리자 업로드 |
 
-SVG 익스포트는 [`assets/diagrams/`](assets/diagrams/)에 문서명-순번으로 들어 있다.
+다이어그램은 **mermaid 인라인 단일 체계**다 — 깃허브가 코드펜스를 그대로 렌더하므로 이미지 익스포트를
+따로 두지 않는다. 정본은 언제나 문서 본문의 mermaid 블록 하나뿐이라 그림과 글이 어긋날 자리가 없다.
 
 > **다이어그램 테마 유지보수**: 모든 mermaid 블록 첫 줄의 `%%{init: ...}%%` 디렉티브는 동일한 문자열이다.
-> 브랜드 색이나 폰트를 바꿀 때는 이 폴더의 `0[2-8]-*.md` 전 파일에서 해당 줄을 **일괄 치환**하고
-> SVG를 다시 뽑는다.
+> 브랜드 색이나 폰트를 바꿀 때는 이 폴더의 `0[1-9]-*.md` 전 파일과 **루트 `README.md`** 에서
+> 해당 줄을 **일괄 치환**한다.

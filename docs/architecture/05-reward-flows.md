@@ -5,8 +5,6 @@
 멤버십 등급 산정, 만보기 미션, 가입 웰컴 혜택 세 갈래를 다룬다.
 포인트는 언제나 `point_ledger` 원장이 진실이고 `users.points_balance`는 같은 트랜잭션에서 갱신되는 캐시다.
 
-> 이미지 버전: [`assets/diagrams/05-reward-flows-1.svg`](assets/diagrams/05-reward-flows-1.svg) · [`-2.svg`](assets/diagrams/05-reward-flows-2.svg) · [`-3.svg`](assets/diagrams/05-reward-flows-3.svg)
-
 ---
 
 ## 1. 멤버십 등급 산정과 적립
@@ -72,13 +70,14 @@ sequenceDiagram
 
     SEN->>APP: 부팅 후 누적 걸음수
     APP->>APP: baseline 보정<br/>날짜 바뀌면 baseline 재설정<br/>재부팅 감지 시 현재값을 새 baseline
-    WEB->>BR: getStepInfo()
-    BR-->>WEB: {available, permission, steps, date}
-
-    alt permission ≠ granted
-        WEB->>BR: requestStepPermission()
-        Note over WEB: ACTIVITY_RECOGNITION 권한 요청<br/>(안드로이드 10 / SDK 29 이상)
-    else 브릿지 없음(일반 브라우저)
+    alt 브릿지 있음 — 앱 WebView 안
+        WEB->>BR: getStepInfo()
+        BR-->>WEB: {available, permission, steps, date}
+        opt permission ≠ granted
+            WEB->>BR: requestStepPermission()
+            Note over WEB: ACTIVITY_RECOGNITION 권한 요청<br/>(안드로이드 10 / SDK 29 이상)
+        end
+    else 브릿지 없음 — 일반 브라우저
         Note over WEB: 수동 입력 데모 패널 노출
     end
 

@@ -6,8 +6,6 @@
 정책 서술은 내부 데이터 모델 설계 문서(비공개) §3.4를 따르되, 이 문서의 다이어그램은
 `OrderService`·`VirtualPaymentGateway` 구현을 그대로 옮긴 것이라 **구현이 문서와 다른 지점도 그린다**.
 
-> 이미지 버전: [`assets/diagrams/03-order-flow-1.svg`](assets/diagrams/03-order-flow-1.svg) · [`-2.svg`](assets/diagrams/03-order-flow-2.svg) · [`-3.svg`](assets/diagrams/03-order-flow-3.svg)
-
 ---
 
 ## 1. 주문 상태머신
@@ -115,7 +113,7 @@ SSW PAY 모달은 **서버와 한 번도 통신하지 않는 순수 클라이언
 %%{init: {"theme":"base","fontFamily":"Pretendard, Malgun Gothic, sans-serif","themeVariables":{"fontSize":"14px","primaryColor":"#DBEAFE","primaryBorderColor":"#1D4ED8","primaryTextColor":"#0F172A","lineColor":"#1D4ED8","secondaryColor":"#FEF3C7","tertiaryColor":"#DCFCE7","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1","noteBkgColor":"#FEF3C7","noteBorderColor":"#D97706","actorBkg":"#DBEAFE","actorBorder":"#1D4ED8","actorTextColor":"#0F172A","signalColor":"#1D4ED8","signalTextColor":"#0F172A","labelBoxBkgColor":"#DBEAFE","labelBoxBorderColor":"#1D4ED8","altSectionBkgColor":"#F8FAFC"},"flowchart":{"curve":"basis","htmlLabels":true,"padding":12}}}%%
 %% 공통 브랜드 테마 — architecture/*.md 전 다이어그램에 동일한 init 블록이 들어간다. 색을 바꿀 때는 이 폴더 전 파일을 일괄 치환할 것.
 flowchart TD
-    start(["POST /orders/{id}/cancel"]) --> owner{"내 주문인가?"}
+    start(["POST /api/v1/orders/{id}/cancel"]) --> owner{"내 주문인가?"}
     owner -->|"아니오"| deny["403 ORDER_ACCESS_DENIED"]
     owner -->|"예"| lock["잠금 순서 고정<br/>User → Order 순 FOR UPDATE"]
     lock --> statechk{"현재 상태가<br/>pending · paid?"}

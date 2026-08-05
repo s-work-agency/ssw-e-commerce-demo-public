@@ -6,8 +6,6 @@
 이 문서는 **파일 기반 협업 프로토콜**의 규약과 실제 검증 절차를 다이어그램으로 옮긴 것이다.
 (규약 원문과 주고받은 메시지는 로컬 전용 협업 영역에 있어 레포에는 포함되지 않는다.)
 
-> 이미지 버전: [`assets/diagrams/08-verification-pipeline-1.svg`](assets/diagrams/08-verification-pipeline-1.svg) · [`-2.svg`](assets/diagrams/08-verification-pipeline-2.svg)
-
 ---
 
 ## 1. 태스크 → 구현 → 검증 → 반영
@@ -22,8 +20,8 @@ flowchart TD
     dispatch --> impl["구현<br/>코덱스 대표 세션 또는 클로드 opus 서브에이전트"]
     impl --> report["구현 보고<br/>'기동 확인' 수준까지만<br/>요구사항 충족 판정은 하지 않는다"]
 
-    report --> vcode["① 코드 검증 (sonnet)<br/>변경 파일 대조 · 정적 점검<br/>gradlew test · npm run lint · npm run build"]
-    vcode --> vrun["② 런타임 검증<br/>브라우저(웹·관리자 웹)<br/>API 직접 호출<br/>안드로이드 에뮬레이터"]
+    report --> vcode["① 코드 검증 (sonnet)<br/>변경 파일 대조 · 정적 점검<br/>gradlew test · dotnet test<br/>npm run lint · npm run build"]
+    vcode --> vrun["② 런타임 검증<br/>브라우저(웹·관리자 웹)<br/>API 직접 호출<br/>WPF 데스크톱 · 안드로이드 에뮬레이터"]
 
     vrun --> verdict{"완료 기준을<br/>모두 충족했는가?"}
     verdict -->|"실패"| fail["실패 항목만 회신<br/>검증 세션은 고치지 않는다"]
