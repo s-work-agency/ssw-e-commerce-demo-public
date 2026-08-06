@@ -19,12 +19,12 @@
 graph TB
     subgraph clients["클라이언트"]
         android["안드로이드 앱<br/>Kotlin · WebView 셸"]
-        web["사용자 웹<br/>Next.js"]
-        adminweb["관리자 웹<br/>Next.js"]
+        web["사용자 웹<br/>Next.js<br/>운영: Cloudflare Workers"]
+        adminweb["관리자 웹<br/>Next.js<br/>운영: Cloudflare Workers"]
         wpf["관리자 Windows<br/>WPF (.NET 8)"]
     end
 
-    server["API 서버<br/>Spring Boot 3.4"]
+    server["API 서버<br/>Spring Boot 3.4<br/>운영: 클라우드 VM · systemd"]
     db[("MariaDB 11")]
     llm["자체 LLM 서빙 서버<br/>vLLM · OpenAI 호환<br/>※ 평소 오프라인 → 자동 강등"]
 
@@ -45,7 +45,7 @@ graph TB
     server --> db
 
     web -.->|"챗봇 분류·RAG 답변"| llm
-    adminweb -.->|"NL 통계·브리핑·문의 초안"| llm
+    adminweb -.->|"AI 브리핑·문의 초안"| llm
 
     server -.->|"인증 위임 · 이미지 업로드<br/>상담 룸 생성"| gw
     web -.->|"이미지 GET · 무인증 공개 경로"| file
@@ -87,7 +87,8 @@ graph TB
 accent 6종 테마.
 
 **관리자 웹** — 대시보드(매출·추이), 주문 칸반, 리뷰 블라인드, 문의 답변, 상품 CRUD,
-커맨드 팔레트(Ctrl+K), CSV 내보내기, 재고 위젯, 감사 로그, 주문 상태 변경 히트맵, 라이브 시연 모드.
+커맨드 팔레트(Ctrl+K), CSV 내보내기, 재고 위젯, 감사 로그, 주문 상태 변경 히트맵, 라이브 시연 모드,
+챗봇 세션 관리(회수 조정 · 최근 접속 IP · 세션 삭제).
 
 **관리자 Windows (WPF)** — 로그인 창 + 메인 창 7개 탭(대시보드 · 주문 · 상품 · 리뷰 · 매장 ·
 문의 · 감사로그). 관리자 웹과 같은 백엔드를 바라보며 **역할별 쓰기 권한 차이**를 그대로 반영합니다.
@@ -96,10 +97,11 @@ accent 6종 테마.
 탭 상태를 브릿지로 동기화합니다. 라우트·URL 처리 정책과 만보기 계산 규칙은 순수 함수로 분리해
 JVM 단위 테스트로 검증합니다.
 
-**AI 기능** — 챗봇(키워드 프리필터 → 분류 게이트 → 미니 RAG → 답변 생성 4단계), 자연어 통계
-실험실(NL→SQL, 가드 통과 후 실행), AI 브리핑, 문의 답변 초안. LLM 서버는 **평소 꺼진 상태가
-기본**이고, 응답이 없으면 네 기능 모두 규칙 기반 **오프라인 폴백으로 자동 강등**되어 시연이 끊기지
-않습니다. 챗봇에는 세션당 대화 회수 제한이 붙어 있는데, 잔여 회수를 클라이언트가 아니라 **서버가
+**AI 기능** — 챗봇(키워드 프리필터 → 분류 게이트 → 미니 RAG → 답변 생성 4단계), AI 브리핑,
+문의 답변 초안. LLM 서버는 **평소 꺼진 상태가 기본**이고, 응답이 없으면 세 기능 모두 규칙 기반
+**오프라인 폴백으로 자동 강등**되어 시연이 끊기지 않습니다. 자연어 통계 실험실(NL→SQL)은 관리자 웹을
+Cloudflare Workers로 옮기면서 **비활성**됐습니다 — MariaDB TCP 직결이 워커 런타임에서 성립하지 않아,
+서버에 read-only 통계 API를 두어 데이터 경로를 바꾸는 것이 복구 조건입니다. 챗봇에는 세션당 대화 회수 제한이 붙어 있는데, 잔여 회수를 클라이언트가 아니라 **서버가
 정본으로 들고 있어** 관리자가 값을 조정하면 고객이 새로고침하지 않아도 다음 메시지부터 반영됩니다.
 
 **상담원 연결** — 챗봇에서 상담사 **1:1 실시간 채팅**으로 넘어갈 수 있습니다. 연결 앞에 필수 문진
@@ -111,6 +113,26 @@ chat-server에 위임한 실동작 연동입니다.
 캐시입니다. 멤버십 등급 산정, 만보기(걸음수) 미션, 가입 웰컴 혜택이 이 원장 위에 얹힙니다.
 
 **데이터 규모** — 상품 50종, 카테고리 2-depth(대분류 12 · 소분류 49), 시드 주문 320건(최근 90일 분산).
+
+## 배포
+
+세 앱 모두 **`main` 머지가 곧 배포**이고, 사람이 손으로 올리는 경로는 없습니다(2026-08-06 전환).
+
+| 앱 | 실행 환경 | 배포 주체 |
+|---|---|---|
+| 고객 웹 · 관리자 웹 | Cloudflare Workers | 깃 연동 빌드(Cloudflare Workers Builds) |
+| API 서버 | 클라우드 VM · systemd | GitHub Actions |
+
+**빌드 명령이 곧 검증 게이트입니다.** 프런트 2종은 의존성 설치 → 단위 테스트 → 타입 검사 → 린트 →
+워커 번들 빌드가 한 명령의 `&&` 연쇄로 묶여 있어, 앞 단계가 하나라도 실패하면 산출물 자체가 생기지
+않고 따라서 배포도 없습니다. 서버 쪽은 **적용 원장을 대조해 미적용 마이그레이션만 순서대로 실행**한 뒤
+애플리케이션을 교체하고, 헬스 체크가 끝내 통과하지 못하면 직전 빌드로 자동 롤백합니다. 마이그레이션이
+실패하면 애플리케이션을 교체하기 **전에** 멈춥니다 — 새 스키마를 기대하는 코드가 옛 스키마 위에서 도는
+상태가 가장 나쁘기 때문입니다.
+
+**CI에 보관하는 시크릿은 0개입니다.** 클라우드 접근은 키 파일 대신 OIDC 기반 연합 인증으로 그때그때
+단기 자격증명을 받고, DB 자격증명·서명 키는 서버 호스트에만, LLM 키는 워커 secret에만 둡니다.
+배포 경로도 포트를 열지 않고 터널을 통해 붙습니다.
 
 ## 다이어그램
 
@@ -252,7 +274,7 @@ flowchart TD
     dispatch --> impl["구현<br/>코덱스 대표 세션 또는 클로드 opus 서브에이전트"]
     impl --> report["구현 보고<br/>'기동 확인' 수준까지만<br/>요구사항 충족 판정은 하지 않는다"]
 
-    report --> vcode["① 코드 검증 (sonnet)<br/>변경 파일 대조 · 정적 점검<br/>gradlew test · dotnet test<br/>npm run lint · npm run build"]
+    report --> vcode["① 코드 검증 (sonnet)<br/>변경 파일 대조 · 정적 점검<br/>gradlew test · dotnet test<br/>npm test · tsc --noEmit · npm run lint"]
     vcode --> vrun["② 런타임 검증<br/>브라우저(웹·관리자 웹)<br/>API 직접 호출<br/>WPF 데스크톱 · 안드로이드 에뮬레이터"]
 
     vrun --> verdict{"완료 기준을<br/>모두 충족했는가?"}
@@ -261,16 +283,23 @@ flowchart TD
     verdict -->|"통과"| commit["구현 주체가 커밋"]
     commit --> push["push (오너 승인 영역)"]
 
+    push --> ci["③ 파이프라인 검증 (사람 개입 없음)<br/>프런트: Workers 빌드 게이트<br/>서버: Actions test·bootJar 잡"]
+    ci --> pass{"통과?"}
+    pass -->|"아니오"| fail
+    pass -->|"예"| brc{"어느 브랜치인가?"}
+    brc -->|"dev"| only["검증까지 — 배포 없음"]
+    brc -->|"main"| deploy["자동 배포"]
+
     classDef step fill:#DBEAFE,stroke:#1D4ED8,stroke-width:1.5px,color:#0F172A
     classDef gate fill:#FEF3C7,stroke:#D97706,stroke-width:1.5px,color:#451A03
     classDef failc fill:#FFE4E6,stroke:#E11D48,stroke-width:1.5px,color:#4C0519
     classDef ok fill:#DCFCE7,stroke:#16A34A,stroke-width:1.5px,color:#052E16
     classDef ext fill:#F1F5F9,stroke:#94A3B8,stroke-width:1.5px,color:#0F172A
-    class design,dispatch,impl,report,vcode,vrun step
-    class verdict gate
+    class design,dispatch,impl,report,vcode,vrun,ci step
+    class verdict,pass,brc gate
     class fail failc
-    class commit,push ok
-    class req ext
+    class commit,push,deploy ok
+    class req,only ext
 ```
 
 전체 다이어그램은 [`docs/architecture/`](docs/architecture/)의 각 문서 본문에 **mermaid 인라인**으로
@@ -293,7 +322,7 @@ flowchart TD
 
 | 경로 | 내용 |
 |---|---|
-| [`docs/architecture/01-system-architecture.md`](docs/architecture/01-system-architecture.md) | 전체 구성 · 구성 요소 · 인증 흐름 · 챗봇 파이프라인 |
+| [`docs/architecture/01-system-architecture.md`](docs/architecture/01-system-architecture.md) | 전체 구성 · 구성 요소 · 인증 흐름 · 챗봇 파이프라인 · 배포 개요 |
 | [`docs/architecture/02-data-model-erd.md`](docs/architecture/02-data-model-erd.md) | 전체 ERD · 바운디드 컨텍스트 경계와 논리 참조 |
 | [`docs/architecture/03-order-flow.md`](docs/architecture/03-order-flow.md) | 주문 상태머신 · SSW PAY 결제 시퀀스 · 취소 원복 |
 | [`docs/architecture/04-review-flow.md`](docs/architecture/04-review-flow.md) | 리뷰 라이프사이클 · 작성 자격 검증 |

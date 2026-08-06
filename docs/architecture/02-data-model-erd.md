@@ -1,6 +1,6 @@
 # 데이터 모델 ERD (Data Model ERD)
 
-> 상태: ✅ 확정 · 최종수정: 2026-08-05
+> 상태: ✅ 확정 · 최종수정: 2026-08-06
 
 내부 데이터 모델 설계 문서(비공개)가 정의한 스키마를 **관계 다이어그램**으로 옮긴 문서다.
 컬럼 정본·정책 서술은 그쪽이 기준이고, 이 문서는 **엔티티가 서로 어떻게 물려 있는지**만 다룬다.
@@ -236,6 +236,7 @@ erDiagram
         bigint user_id "논리참조 AUTH 경계 · nullable"
         int used_count "소비한 대화 회수"
         int bonus_count "관리자 부여분"
+        varchar last_ip "최근 접속 IP · nullable · X-Client-IP"
         datetime created_at ""
         datetime updated_at "최근 활동 정렬용"
     }

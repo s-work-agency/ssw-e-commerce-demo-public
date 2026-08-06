@@ -1,6 +1,6 @@
 # 인증과 챗봇 (Auth & Chatbot)
 
-> 상태: ✅ 확정 · 최종수정: 2026-08-05
+> 상태: ✅ 확정 · 최종수정: 2026-08-06
 
 JWT 인증·역할 게이트, 로그인 진입점, 챗봇 파이프라인, 그리고 챗봇에서 이어지는 **상담원 연결**까지 다룬다.
 [`01-system-architecture.md`](01-system-architecture.md) §3·§4의 요약을 **구현 수준으로 확장한 문서**이며,
@@ -295,9 +295,10 @@ flowchart TD
 | 잔여 계산 | `기본 한도 + bonus_count − used_count` |
 | 클라이언트 보관 | **세션 키 하나뿐** — httpOnly · `SameSite=Lax` · UUID v4 · 1시간 |
 | 고객용 API | `GET /api/v1/chat-usage/{sessionKey}` · `POST .../consume` |
-| 관리자 API | `GET /api/v1/admin/chat-usage` · `POST .../{sessionKey}/reset` · `POST .../{sessionKey}/bonus` |
-| 관리자 조작 | 세션 목록 · 초기화(`used_count=0`, 보너스는 유지) · 보너스 부여(**+1~50**) |
+| 관리자 API | `GET /api/v1/admin/chat-usage` · `POST .../{sessionKey}/reset` · `POST .../{sessionKey}/bonus` · `DELETE .../{sessionKey}` |
+| 관리자 조작 | 세션 목록 · 초기화(`used_count=0`, 보너스는 유지) · 보너스 부여(**+1~50**) · 세션 삭제(**하드 삭제**, 204/404) |
 | 관리자 화면 | 관리자 웹 `/chatbot` — **`ADMIN` 전용**(staff 3역할이 아니다) |
+| 접속 출처 표시 | `last_ip` — 고객 웹 워커가 `X-Client-IP`로 넘긴 실제 클라이언트 IP |
 | 사용량 서버 호출 타임아웃 | 3초 |
 | 서버 불통 | **fail-open** — 대화는 통과, 잔여 표시만 "확인 불가" |
 
@@ -313,6 +314,12 @@ flowchart TD
 **회수를 소비하지 않는 호출**을 분명히 갈라 둔 것이 짝이 되는 규칙이다 — 패널 오픈 시 상태 체크(§3.1),
 주문 선택 버튼(§3.2), 고정 안내 문구는 회수를 깎지 않는다. 사용자가 "아무것도 안 물어봤는데 회수가 줄었다"고
 느끼는 순간, 이 제한은 시연 포인트가 아니라 결함이 된다.
+
+**접속 IP는 웹이 실어 보낸다.** 고객 웹이 Cloudflare Workers에서 돌면서 서버가 보는 remote address가
+워커 주소로 고정됐기 때문에, 워커가 `cf-connecting-ip`(차선은 `x-forwarded-for` 첫 값)에서 뽑은 실제
+클라이언트 IP를 `X-Client-IP`로 넘기고 서버가 `chat_usage.last_ip`에 남긴다. 관리자 화면 **표시용**이지
+인가·차단 판정에는 쓰지 않는다 — 위조 가능한 헤더로 권한을 가르지 않는다는 뜻이다.
+운영 플로우와 삭제/초기화의 차이는 [`06-ops-flows.md`](06-ops-flows.md) §4.1~§4.2가 정본이다.
 
 ---
 

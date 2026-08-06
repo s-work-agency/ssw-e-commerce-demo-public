@@ -1,6 +1,6 @@
 # 검증 파이프라인 (Verification Pipeline)
 
-> 상태: ✅ 확정 · 최종수정: 2026-08-02
+> 상태: ✅ 확정 · 최종수정: 2026-08-06
 
 이 데모는 여러 에이전트 세션이 나눠 만든다. 그래서 "누가 만들고 누가 판정하는가"를 규약으로 고정해 두었다.
 이 문서는 **파일 기반 협업 프로토콜**의 규약과 실제 검증 절차를 다이어그램으로 옮긴 것이다.
@@ -20,7 +20,7 @@ flowchart TD
     dispatch --> impl["구현<br/>코덱스 대표 세션 또는 클로드 opus 서브에이전트"]
     impl --> report["구현 보고<br/>'기동 확인' 수준까지만<br/>요구사항 충족 판정은 하지 않는다"]
 
-    report --> vcode["① 코드 검증 (sonnet)<br/>변경 파일 대조 · 정적 점검<br/>gradlew test · dotnet test<br/>npm run lint · npm run build"]
+    report --> vcode["① 코드 검증 (sonnet)<br/>변경 파일 대조 · 정적 점검<br/>gradlew test · dotnet test<br/>npm test · tsc --noEmit · npm run lint"]
     vcode --> vrun["② 런타임 검증<br/>브라우저(웹·관리자 웹)<br/>API 직접 호출<br/>WPF 데스크톱 · 안드로이드 에뮬레이터"]
 
     vrun --> verdict{"완료 기준을<br/>모두 충족했는가?"}
@@ -29,17 +29,28 @@ flowchart TD
     verdict -->|"통과"| commit["구현 주체가 커밋"]
     commit --> push["push (오너 승인 영역)"]
 
+    push --> ci["③ 파이프라인 검증 (사람 개입 없음)<br/>프런트: Workers 빌드 게이트<br/>서버: Actions test·bootJar 잡"]
+    ci --> pass{"통과?"}
+    pass -->|"아니오"| fail
+    pass -->|"예"| brc{"어느 브랜치인가?"}
+    brc -->|"dev"| only["검증까지 — 배포 없음"]
+    brc -->|"main"| deploy["자동 배포"]
+
     classDef step fill:#DBEAFE,stroke:#1D4ED8,stroke-width:1.5px,color:#0F172A
     classDef gate fill:#FEF3C7,stroke:#D97706,stroke-width:1.5px,color:#451A03
     classDef failc fill:#FFE4E6,stroke:#E11D48,stroke-width:1.5px,color:#4C0519
     classDef ok fill:#DCFCE7,stroke:#16A34A,stroke-width:1.5px,color:#052E16
     classDef ext fill:#F1F5F9,stroke:#94A3B8,stroke-width:1.5px,color:#0F172A
-    class design,dispatch,impl,report,vcode,vrun step
-    class verdict gate
+    class design,dispatch,impl,report,vcode,vrun,ci step
+    class verdict,pass,brc gate
     class fail failc
-    class commit,push ok
-    class req ext
+    class commit,push,deploy ok
+    class req,only ext
 ```
+
+단계 ③은 2026-08-06에 붙었다. 그 전까지 push 뒤는 사람의 영역이었지만, 지금은 **push 자체가 세 번째
+검증 라운드를 부른다**(§1.1). 사람이 도는 ①·②를 대체하는 것이 아니라, 통과했다고 판단한 것을 깨끗한
+환경에서 한 번 더 확인하는 그물이다.
 
 핵심 규칙은 하나다 — **검증은 구현 주체와 분리한다.** 코덱스가 구현하면 검증은 클로드 측이 맡고, 검증에서
 실패가 나오면 검증 세션이 직접 고치지 않고 실패 내용만 구현 주체에 돌려보낸다. 같은 세션이 자기 코드를
@@ -49,11 +60,11 @@ flowchart TD
 
 ### 레포별 검증 명령
 
-| 레포 | 빌드·실행 | 테스트 | Lint |
+| 레포 | 빌드·실행 | 테스트 | 타입·Lint |
 |---|---|---|---|
-| `-server` | `./gradlew bootRun` | `./gradlew test` | — |
-| `-web` | `npm run dev` / `npm run build` | (테스트 스크립트 없음) | `npm run lint` |
-| `-admin-web` | `npm run dev` / `npm run build` | (테스트 스크립트 없음) | `npm run lint` |
+| `-server` | `./gradlew bootRun` / `bootJar` | `./gradlew test` | — |
+| `-web` | `npm run dev` / `npx opennextjs-cloudflare build` | `npm test` | `npx tsc --noEmit` · `npm run lint` |
+| `-admin-web` | `npm run dev` / `npx opennextjs-cloudflare build` | `npm test` | `npx tsc --noEmit` · `npm run lint` |
 | `-admin-windows` | `dotnet run --project src/SswEcommerceAdmin.Wpf` | `dotnet test` | — |
 | `-android` | `./gradlew assembleDebug` | JVM 단위 테스트(정책 클래스) | — |
 
@@ -63,6 +74,25 @@ flowchart TD
 > 서버 테스트 클래스 파일은 35개다. **케이스 수는 근거가 엇갈린다** — 서버 README는 97개,
 > 인박스 노트는 150개로 적혀 있다. 시점 차이로 보이나 어느 쪽이 최신인지 명시된 갱신 로그가
 > 없어 여기서는 두 근거를 병기해 둔다.
+
+### 1.1 파이프라인이 대신 도는 검증
+
+push 이후의 검증은 레포마다 주체가 다르다. 어디에 검증이 박혀 있는지만 본다.
+
+| 레포 | 주체 | 검증 내용 | 실패하면 |
+|---|---|---|---|
+| `-web` · `-admin-web` | Cloudflare Workers Builds | `npm ci && npm test && npx tsc --noEmit && npm run lint && npx opennextjs-cloudflare build` | 빌드 산출물이 생기지 않아 **배포가 일어나지 않는다** |
+| `-server` | GitHub Actions | `./gradlew test bootJar` (`dev`·`main` 양쪽) | 워크플로 실패 — `main`이었다면 배포 스텝까지 가지 않는다 |
+| `-admin-windows` · `-android` | 없음 | — | 로컬 검증이 전부다 |
+
+프런트 2종은 **검증과 빌드가 한 명령 안에 있다.** 테스트 워크플로를 따로 두고 그 결과를 배포 조건으로
+참조하는 구조가 아니라 `&&` 연쇄라, 게이트를 우회할 경로가 없다. 서버는 검증 잡과 배포 스텝이 한
+워크플로에 있고 배포 스텝에만 `main` 조건이 걸려 있다 — `dev` push는 검증만 돌고 끝난다.
+
+> ⚠️ **파이프라인 검증은 ①·②를 대체하지 않는다.** 여기서 도는 것은 정적 검사와 단위 테스트뿐이고,
+> 화면이 의도대로 그려지는가·플로우가 끝까지 흐르는가는 여전히 사람(런타임 검증)의 몫이다.
+> "CI가 초록이니 됐다"로 완료 기준을 대신하면, 완료 기준에 적힌 항목의 대부분이 검사되지 않은 채
+> 통과한다. `-admin-windows`·`-android` 두 레포는 아예 파이프라인이 없어 더 그렇다.
 
 ---
 

@@ -1,6 +1,6 @@
 # 인프라 연동 (Infra Integration)
 
-> 상태: ✅ 확정 · 최종수정: 2026-08-05
+> 상태: ✅ 확정 · 최종수정: 2026-08-06
 
 데모가 SWorkAgency **공용 인프라**에 위임한 세 축 — 인증, 상품 이미지 저장·최적화, 실시간 상담 채팅 — 을 다룬다.
 데모 자체 구현이던 것을 인프라로 옮긴 부분이라, [`07-auth-and-chatbot.md`](07-auth-and-chatbot.md) §1(로컬 HS256 JWT)은
@@ -356,8 +356,9 @@ flowchart TD
 조회해 산출물을 통째로 갈아엎는다. 파생본 생성이 비동기라 "지난번엔 비었는데 이번엔 있다"가 정상 경로이기 때문이다.
 
 두 스크립트 모두 **DB에 직접 쓰지 않고 `UPDATE` SQL만 만든다.** 운영 프로파일이 `ddl-auto=validate`이고 스키마
-변경을 마이그레이션 파일 수동 적용으로 관리하는 이 레포의 관례([`01-system-architecture.md`](01-system-architecture.md) §2.6)를
-데이터 백필에도 그대로 적용한 것이다. `products.file_id` 백필 마이그레이션은 원장의 매핑 50건을 SQL 안에
+변경을 마이그레이션 파일로 관리하는 이 레포의 관례([`01-system-architecture.md`](01-system-architecture.md) §2.6)를
+데이터 백필에도 그대로 적용한 것이다. 그 파일들이 운영에 적용되는 경로는 2026-08-06부터 사람 손이 아니라
+배포 시 **원장 기반 증분 실행**이다([`01-system-architecture.md`](01-system-architecture.md) §5) — 백필 SQL도 같은 경로를 탄다. `products.file_id` 백필 마이그레이션은 원장의 매핑 50건을 SQL 안에
 박아 넣고 **`file_id`가 비어 있는 행만** 채우도록 짜여 있다 — 관리자가 이미 교체한 이미지를 시드 값으로 덮지 않기 위해서다.
 
 ---
