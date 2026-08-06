@@ -91,10 +91,11 @@ LLM 서버를 쓰는 AI 브리핑·문의 초안이 함께 들어 있다.
 운영 실행 환경은 2026-08-06에 **클라우드 VM(Next standalone + systemd)에서 Cloudflare Workers로 이관**했고,
 전용 도메인도 새로 발급했다.
 
-> 🚧 **실험실의 자연어 통계(NL→SQL)는 현재 비활성이다.** MariaDB에 TCP로 직결하던 기능이라
-> 워커 런타임(raw TCP 소켓 없음)에서 성립하지 않는다. 코드는 비활성 보관 디렉터리에 그대로 두었고,
-> 서버에 read-only 통계 API를 만들어 데이터 경로를 바꾸는 것이 복구 조건이다.
-> AI 브리핑·문의 초안은 LLM `fetch`만 하므로 워커에서 그대로 동작한다.
+> 🚧 **실험실의 자연어 통계는 현재 비활성이다.** MariaDB에 TCP로 직결하던 기능이라
+> 워커 런타임(raw TCP 소켓 없음)에서 성립하지 않는다. 코드는 비활성 보관 디렉터리에 그대로 두었다.
+> 복구는 그 코드를 되살리는 방식이 아니라 **고정 집계 + 해석** 구조로 다시 짜는 방식으로 간다 —
+> 서버 쪽 지표 API는 이미 신설됐고(`/api/v1/admin/stats/**`, [`06-ops-flows.md`](06-ops-flows.md) §5)
+> 화면 작업이 남았다. AI 브리핑·문의 초안은 LLM `fetch`만 하므로 워커에서 그대로 동작한다.
 
 ### 2.3 관리자 Windows (`ssw-e-commerce-demo-admin-windows`)
 
@@ -212,7 +213,9 @@ graph LR
 폴백 범위에서만 동작한다.
 
 > 자연어 통계(실험실)는 NL→SQL을 **가드를 거친 뒤 실행**하는 구조였으나, 워커 이관과 함께
-> 비활성됐다(§2.2).
+> 비활성됐다(§2.2). 되살릴 때는 **SQL 생성을 버리고** 서버가 제공하는 고정 집계 지표를 고르게
+> 하며, LLM은 지표 선택과 결과 해석만 맡는다 — 임의 SQL이 없으면 가드도 필요 없다
+> ([`06-ops-flows.md`](06-ops-flows.md) §5).
 
 챗봇에는 위 4단계 외에 **세션당 대화 회수 제한**(서버 `chat_usage`가 정본, 관리자가 실시간 조정)과
 **상담원 실시간 채팅으로의 전환**(연결 전 필수 문진)이 붙어 있다. 둘 다
@@ -262,7 +265,7 @@ graph LR
 | [`03-order-flow.md`](03-order-flow.md) | 주문 상태머신 · SSW PAY 결제 시퀀스 · 취소 원복 |
 | [`04-review-flow.md`](04-review-flow.md) | 리뷰 라이프사이클 · 작성 자격 검증 |
 | [`05-reward-flows.md`](05-reward-flows.md) | 멤버십 등급 산정 · 만보기 미션 · 가입 웰컴 혜택 |
-| [`06-ops-flows.md`](06-ops-flows.md) | 재고 임계 알림 래치 · 관리 행위 감사 기록 · 주문확인 메일 · 챗봇 대화 회수 관리 |
+| [`06-ops-flows.md`](06-ops-flows.md) | 재고 임계 알림 래치 · 관리 행위 감사 기록 · 주문확인 메일 · 챗봇 대화 회수 관리 · 고정 집계 통계 API |
 | [`07-auth-and-chatbot.md`](07-auth-and-chatbot.md) | JWT 인증·역할 게이트 · 소셜 가상 로그인 · 챗봇 파이프라인 · 대화 회수 · 상담원 연결 (§3·§4 확장) |
 | [`08-verification-pipeline.md`](08-verification-pipeline.md) | 태스크→구현→검증 루프 · 인박스 협업 프로토콜 |
 | [`09-infra-integration.md`](09-infra-integration.md) | 공용 인프라 위임 — 인증 강등 · 이미지 파이프라인 · 관리자 업로드 |

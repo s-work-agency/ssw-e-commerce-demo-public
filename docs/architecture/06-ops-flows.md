@@ -2,9 +2,11 @@
 
 > 상태: ✅ 확정 · 최종수정: 2026-08-06
 
-재고 임계 알림, 관리 행위 감사 기록, 주문확인 메일, 챗봇 대화 회수 관리 네 갈래를 다룬다.
-앞의 셋은 "업무 트랜잭션에 어떻게 얹히는가"가 핵심이라 트랜잭션 경계를 다이어그램에 같이 그렸고,
-넷째는 **관리자 조작이 고객 화면에 언제 도달하는가**가 핵심이라 그 전파 경로를 그렸다.
+재고 임계 알림, 관리 행위 감사 기록, 주문확인 메일, 챗봇 대화 회수 관리, 고정 집계 통계 API
+다섯 갈래를 다룬다. 앞의 셋은 "업무 트랜잭션에 어떻게 얹히는가"가 핵심이라 트랜잭션 경계를
+다이어그램에 같이 그렸고, 넷째는 **관리자 조작이 고객 화면에 언제 도달하는가**가 핵심이라 그
+전파 경로를 그렸다. 다섯째는 **LLM에게 무엇을 시키지 않는가**가 핵심이라 질의를 만드는 주체가
+어디인지를 그렸다.
 
 ---
 
@@ -304,3 +306,129 @@ sequenceDiagram
 
 > 초기화는 `used_count`를 0으로 되돌리는 **갱신**이지 행 삭제가 아니다. 행을 지우면 고객 브라우저에
 > 남아 있는 세션 키가 어느 행과도 이어지지 않아, 다음 메시지에서 새 행이 생기며 보너스 이력이 끊긴다.
+
+---
+
+## 5. 고정 집계 통계 API — SQL 생성을 버린 자리
+
+자연어 통계 실험실은 원래 **LLM이 SQL을 짓고** 앱 가드로 검사한 뒤 컬럼 단위로 GRANT한
+읽기 전용 계정으로 실행하는 2겹 구조였다. 관리자 웹을 Cloudflare Workers로 옮기면서 DB
+직결이 성립하지 않게 됐고([`01-system-architecture.md`](01-system-architecture.md) §2.2),
+프로덕션에는 그 읽기 전용 계정 자체가 없다. 그래서 데이터 경로만 서버로 옮기는 대신
+**구조를 바꿨다.**
+
+```mermaid
+%%{init: {"theme":"base","fontFamily":"Pretendard, Malgun Gothic, sans-serif","themeVariables":{"fontSize":"14px","primaryColor":"#DBEAFE","primaryBorderColor":"#1D4ED8","primaryTextColor":"#0F172A","lineColor":"#1D4ED8","secondaryColor":"#FEF3C7","tertiaryColor":"#DCFCE7","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1","noteBkgColor":"#FEF3C7","noteBorderColor":"#D97706","actorBkg":"#DBEAFE","actorBorder":"#1D4ED8","actorTextColor":"#0F172A","signalColor":"#1D4ED8","signalTextColor":"#0F172A","labelBoxBkgColor":"#DBEAFE","labelBoxBorderColor":"#1D4ED8","altSectionBkgColor":"#F8FAFC"},"flowchart":{"curve":"basis","htmlLabels":true,"padding":12}}}%%
+%% 공통 브랜드 테마 — architecture/*.md 전 다이어그램에 동일한 init 블록이 들어간다. 색을 바꿀 때는 이 폴더 전 파일을 일괄 치환할 것.
+flowchart LR
+    q["관리자 질문<br/>자연어"] --> cat["GET .../stats/metrics<br/>지표·파라미터 스펙"]
+    cat --> pick["LLM: 지표 선택<br/>구조화된 JSON"]
+    pick --> run["GET .../stats/metrics/지표id<br/>상수 JPQL + 바인딩 파라미터"]
+    run --> rows["결과 행 + 지표 메타"]
+    rows --> read["LLM: 해석 문장<br/>이 행들만 근거로"]
+    rows --> tbl["관리자 화면 표·차트"]
+
+    classDef ext fill:#FEF3C7,stroke:#D97706,color:#0F172A
+    classDef core fill:#DBEAFE,stroke:#1D4ED8,color:#0F172A
+    class pick,read ext
+    class cat,run,rows core
+```
+
+**핵심은 LLM이 질의를 만들지 않는다는 것이다.** 고를 수 있는 것은 카탈로그에 있는 지표와
+그 지표가 선언한 파라미터뿐이고, 실행되는 질의는 서버가 미리 작성한 상수 JPQL이다.
+문자열 연결로 질의를 만드는 코드가 없으므로 주입 표면 자체가 존재하지 않는다.
+
+| 메서드 | 경로 | 권한 |
+|---|---|---|
+| GET | `/api/v1/admin/stats/metrics` | **`ADMIN` 전용** — 지표 카탈로그 |
+| GET | `/api/v1/admin/stats/metrics/{metricId}` | **`ADMIN` 전용** — 지표 실행 |
+
+> ⚠️ **통계 API는 `ADMIN` 전용이다.** `/api/v1/admin/**`의 일반 규칙은 staff 3역할을
+> 통과시키지만, 두 엔드포인트에는 `@PreAuthorize("hasRole('ADMIN')")`가 따로 붙어 있다.
+> 결과가 외부 LLM 경계로 나가는 데이터라, 관리자 챗봇 화면(§4)과 같은 기준으로 역할을
+> 좁혔다.
+
+### 5.1 지표 일곱 개
+
+| 지표 id | 무엇을 세나 | 고유 파라미터 |
+|---|---|---|
+| `sales_trend` | 결제 총액·주문 수 추이 | `granularity` · `orderStatus` |
+| `category_sales` | 카테고리별 상품 판매액·수량 | `categoryLevel` · `orderStatus` · `limit` |
+| `order_status_distribution` | 상태별 주문 수·결제 총액(**취소 포함**) | — |
+| `top_products` | 상품별 판매액·수량·주문 건수 상위 N | `sortBy` · `orderStatus` · `limit` |
+| `low_stock_products` | 판매 중 상품의 저재고·품절 **현재 스냅샷** | `threshold` · `limit` |
+| `review_rating_distribution` | 1~5점 리뷰 수(블라인드·삭제 제외) | — |
+| `user_signup_trend` | 신규 가입 추이(탈퇴 제외) | `granularity` |
+
+`low_stock_products`를 뺀 여섯은 공통 기간 파라미터(`lastDays` 또는 `from`+`to`)를 받는다.
+저재고는 "지금 몇 개 남았나"이지 기간 집계가 아니라서 받지 않는다. 기간은 전 지표
+**주문 접수일 기준**이다.
+
+> **매출이 두 종류인 것은 의도된 구분이다.** `sales_trend`·`order_status_distribution`은
+> 주문의 결제 총액(`orders.total` — 배송비 포함, 쿠폰·포인트 차감 후)을 쓰고,
+> `category_sales`·`top_products`는 주문 항목의 판매액(단가 × 수량)을 쓴다. 배송비·할인은
+> 주문 단위 값이라 상품으로 쪼갤 수 없기 때문이다. 두 지표의 합계는 일치하지 않으며, 그
+> 사실을 각 지표의 `description`에 적어 해석하는 LLM이 오해하지 않게 했다.
+
+### 5.1.1 `orderStatus` — 취소를 지표가 아니라 조회 옵션으로 본다
+
+"최근 취소가 가장 많이 된 상품이 뭐야"는 처음에 답이 나오지 않던 질문이다. 취소가
+`order_status_distribution`의 전체 건수로만 보였고 상품별로 쪼갠 값이 없었다.
+
+**여기서 취소 전용 지표를 새로 만들지 않았다.** 대신 주문·주문항목을 세는 세 지표
+(`sales_trend`·`category_sales`·`top_products`)에 집계 대상 상태를 고르는 `orderStatus`를
+붙였다. 파라미터 하나로 세 지표가 전부 취소 관점이 되므로 지표를 셋 만드는 것보다 표현력이
+넓고, 카탈로그가 얇게 유지된다 — **지표가 늘수록 LLM의 선택 난도와 오선택 확률이 올라간다.**
+
+| `orderStatus` | 집계 대상 |
+|---|---|
+| `EXCLUDE_CANCELLED` **(기본값)** | 취소를 뺀 네 상태 — 종전 동작 그대로 |
+| `ALL` | 취소를 포함한 다섯 상태 전체 |
+| `PENDING`·`PAID`·`SHIPPED`·`DELIVERED`·`CANCELLED` | 그 상태인 주문만 |
+
+앞의 질문은 `top_products` + `orderStatus=CANCELLED`로 답한다. `sortBy=QUANTITY`면 취소
+수량 순, `REVENUE`면 취소 금액 순이다.
+
+> ⚠️ **상태를 좁히면 열 이름은 그대로지만 뜻이 함께 좁혀진다.** `orderStatus=CANCELLED`로
+> 조회한 `top_products`의 "상품 판매액"은 **취소된 금액**이고, `sales_trend`의 "매출"은
+> 취소된 결제 총액이다. 지표가 무엇을 세는지는 그대로이고 어떤 주문을 세는지만 달라진다.
+> 이 사실을 지표 `description`과 `orderStatus`의 파라미터 설명 양쪽에 적었다 — LLM은 이
+> 설명만 읽고 지표와 값을 고르므로, 한쪽에만 적으면 읽지 않는 경로가 생긴다.
+
+기본값이 `EXCLUDE_CANCELLED`라 **파라미터를 주지 않은 호출은 종전과 완전히 같은 결과**를
+낸다. 질의도 갈라지지 않는다 — 조건은 `o.status in :statuses` 하나로 고정이고, 열거값을
+상태 집합으로 옮기는 Java 분기(`StatsMetric.orderStatusFilter`)가 그 집합을 바인딩
+파라미터로 넘긴다. 값에 따라 질의 문자열이 달라지는 코드는 없다.
+
+`order_status_distribution`에는 붙이지 않았다. 그 지표는 상태로 좁혀 보는 것이 아니라 상태
+구성 자체를 세는 것이라, 상태 필터는 행을 지우는 것 말고 하는 일이 없다. 주문을 세지 않는
+세 지표(`low_stock_products`·`review_rating_distribution`·`user_signup_trend`)도 마찬가지로
+받지 않으며, 그쪽에 `orderStatus`를 주면 **400**이다(§5.2).
+
+### 5.2 파라미터 검증 — 무시하지 않고 거부한다
+
+지표 스펙(파라미터 이름·타입·허용값·범위·기본값)은 서버 열거형 하나가 정본이고, **카탈로그
+응답과 실행 시 검증이 같은 값을 본다.** 문서와 실제 규칙이 갈라질 수 없는 구조다.
+
+| 규칙 | 위반 시 |
+|---|---|
+| 카탈로그에 없는 지표 id | 400 — 사용 가능한 id 목록을 메시지에 담는다 |
+| 지표가 선언하지 않은 파라미터 이름 | 400 |
+| 열거값(`granularity`·`sortBy`·`categoryLevel`·`orderStatus`) 밖의 값 | 400 |
+| 기간 상한 **365일** 초과 · `lastDays` 범위 밖 | 400 |
+| 상위 N개 상한 **100** 초과 · `limit` 0 이하 | 400 |
+| `from`·`to` 한쪽만 지정 · `from`/`to`와 `lastDays` 동시 지정 | 400 |
+
+모르는 파라미터를 **조용히 무시하지 않는 것**이 이 설계에서 가장 중요한 판단이다. 무시하면
+LLM은 자기가 건 필터가 걸린 줄 알고 그 전제로 문장을 만든다 — 틀린 숫자보다 틀린 전제가 더
+고치기 어렵다. 응답에는 기본값까지 채운 `appliedParameters`와 실제 적용된 `period`를 함께
+실어, 해석이 어떤 조건 위에서 나왔는지 화면과 LLM이 같이 볼 수 있게 한다.
+
+주·월 버킷은 DB에서 일별로 집계한 뒤 애플리케이션에서 접는다. 기간 상한이 365일이라 접기
+전 행이 366을 넘지 않고, DB별 주차 계산 규칙 차이도 피한다(대시보드의 주문 상태 변경
+히트맵이 7×24를 7×8로 접는 것과 같은 방식이다).
+
+> 🚧 **관리자 웹 실험실은 아직 이 API에 붙지 않았다.** 서버 쪽 지표·엔드포인트만 신설된
+> 상태이고, 비활성 보관 디렉터리에 남겨 둔 화면을 이 구조에 맞춰 다시 짜는 작업이 남아 있다.
+> 시연 대본에서 실험실은 여전히 "보여줄 수 없음"이다
+> ([`../demo-scenario.md`](../demo-scenario.md)).
