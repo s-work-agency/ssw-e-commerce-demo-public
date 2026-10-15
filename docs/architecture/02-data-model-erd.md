@@ -1,14 +1,15 @@
 # 데이터 모델 ERD (Data Model ERD)
 
-> 상태: ✅ 확정 · 최종수정: 2026-08-06
+> 상태: 핵심 관계와 구현 추가분 대조 · 최종수정: 2026-10-15
 
 내부 데이터 모델 설계 문서(비공개)가 정의한 스키마를 **관계 다이어그램**으로 옮긴 문서다.
 컬럼 정본·정책 서술은 그쪽이 기준이고, 이 문서는 **엔티티가 서로 어떻게 물려 있는지**만 다룬다.
-다이어그램은 서버 엔티티(`ssw-e-commerce-demo-server/.../domain/*.java`)의 실제 매핑을 대조해 그렸다.
+다이어그램은 서버 엔티티와 migration의 핵심 관계를 대조해 그렸다. 모든 컬럼·인덱스·운영 적용 상태를
+나열하는 전체 스키마가 아니며, 상세 데이터 모델 전문은 공개하지 않는다.
 
 ---
 
-## 1. 전체 관계도
+## 1. 핵심 관계도
 
 ```mermaid
 %%{init: {"theme":"base","fontFamily":"Pretendard, Malgun Gothic, sans-serif","themeVariables":{"fontSize":"14px","primaryColor":"#DBEAFE","primaryBorderColor":"#1D4ED8","primaryTextColor":"#0F172A","lineColor":"#1D4ED8","secondaryColor":"#FEF3C7","tertiaryColor":"#DCFCE7","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1","noteBkgColor":"#FEF3C7","noteBorderColor":"#D97706","actorBkg":"#DBEAFE","actorBorder":"#1D4ED8","actorTextColor":"#0F172A","signalColor":"#1D4ED8","signalTextColor":"#0F172A","labelBoxBkgColor":"#DBEAFE","labelBoxBorderColor":"#1D4ED8","altSectionBkgColor":"#F8FAFC"},"flowchart":{"curve":"basis","htmlLabels":true,"padding":12}}}%%
@@ -43,6 +44,10 @@ erDiagram
     orders |o--o{ user_coupons : "used_order_id (nullable)"
     coupons ||--o{ orders : "coupon_code (nullable)"
     coupons ||--o{ user_coupons : "coupon_code"
+    coupons ||--o{ coupon_drop : "coupon_code"
+    time_sale ||--o{ time_sale_item : "컬렉션 소유"
+    products ||..o{ time_sale_item : "product_id 원복 대상"
+    time_sale |o..o{ products : "time_sale_id 논리참조 · 로컬 수정"
     products |o..o{ order_items : "product_id 스냅샷 (FK 없음)"
 
     users {
@@ -64,11 +69,12 @@ erDiagram
         varchar status "ACTIVE HIDDEN DELETED"
     }
     products {
-        int id PK "수동 채번"
+        int id PK "product_seq 기반 채번"
         varchar name ""
         int category_id FK ""
         int price ""
         int sale "세일가 nullable"
+        bigint time_sale_id "할인 소유 캠페인 · nullable · 로컬 수정"
         int stock ""
         boolean stock_low_alert_active "알림 래치"
         double rating "리뷰 평점 캐시"
@@ -139,6 +145,7 @@ erDiagram
         int value ""
         int min_order_amount ""
         varchar status "ACTIVE EXPIRED DELETED"
+        boolean drop_exclusive "일반 코드 발급 차단·로컬 변경"
         datetime valid_from "NULL=즉시"
         datetime valid_until "NULL=무기한"
     }
@@ -146,7 +153,7 @@ erDiagram
         bigint id PK ""
         bigint user_id "논리참조 AUTH 경계"
         varchar coupon_code FK ""
-        varchar source "4종 · 표 참조"
+        varchar source "5종 · 표 참조"
         varchar source_ref "발급근거"
         datetime issued_at ""
         datetime used_at "NULL=미사용"
@@ -163,6 +170,31 @@ erDiagram
         varchar detail ""
         boolean is_default ""
         varchar status "ACTIVE DELETED"
+    }
+    time_sale {
+        bigint id PK ""
+        int discount_rate ""
+        datetime starts_at ""
+        datetime ends_at ""
+        varchar status "ACTIVE ENDED"
+    }
+    time_sale_item {
+        bigint time_sale_id FK "컬렉션 소유"
+        int product_id "할인 대상 스냅샷"
+    }
+    coupon_drop {
+        bigint id PK ""
+        varchar coupon_code FK "발급 대상 쿠폰"
+        int total_quantity "총 발급량"
+        int remaining_quantity "잔여량"
+        varchar status "ACTIVE ENDED"
+    }
+    product_seq {
+        varchar seq_key PK "VARCHAR(20) · PRODUCT"
+        bigint next_val "다음 상품 ID"
+    }
+    promotion_guard {
+        varchar guard_key PK "time-sale · coupon-drop · 로컬 수정"
     }
     inquiries {
         bigint id PK ""
@@ -269,7 +301,7 @@ erDiagram
 | `orders.status` | `pending` · `paid` · `shipped` · `delivered` · `cancelled` (**소문자**) |
 | `orders.payment_method` | `card` · `transfer` · `phone` (**소문자**) |
 | `point_ledger.reason` | `SIGNUP_BONUS` · `STEP_GOAL` · `STEP_REWARD`(미사용) · `ORDER_USE` · `ORDER_EARN` · `ORDER_REFUND` · `ADMIN_ADJUST` |
-| `user_coupons.source` | `SIGNUP` · `STEP_MISSION`(미사용) · `ADMIN_ISSUE` · `CODE_REDEEM` |
+| `user_coupons.source` | `SIGNUP` · `STEP_MISSION`(미사용) · `ADMIN_ISSUE` · `CODE_REDEEM` · `COUPON_DROP` |
 | `inquiries.type` | `ORDER` · `DELIVERY` · `RETURN` · `PRODUCT` · `OTHER` |
 | `inquiries.status` | `OPEN` · `ANSWERED` · `CLOSED` · `DELETED` |
 | `notifications.type` | `ORDER_STATUS` · `STEP_MISSION` · `PROMOTION` · `INQUIRY_ANSWERED` · `STOCK_LOW` |
@@ -298,7 +330,7 @@ flowchart LR
     subgraph commerce["COMMERCE · 커머스 본체"]
         direction TB
         cOrders["orders · reviews<br/>user_coupons · wishlists<br/>inquiries · user_addresses<br/>order_status_history · chat_usage"]
-        cCore["categories → products<br/>coupons · order_items"]
+        cCore["categories → products<br/>coupons · order_items<br/>time_sale · time_sale_item · coupon_drop"]
     end
 
     subgraph reward["REWARD"]
@@ -347,10 +379,9 @@ DB 조인이 아니라 HTTP 호출이나 이벤트로 대체된다. `notificatio
 
 ---
 
-## 3. 구현과 설계 문서가 어긋난 지점
+## 3. 구현 추가분과 문서 범위
 
-다이어그램을 그리며 엔티티 코드와 내부 데이터 모델 설계 문서(비공개)를 대조한 결과 아래 차이를 확인했다.
-데이터 모델 문서 개정 시 반영 대상이다.
+아래는 초기 설계에서 추가·변경된 항목이다. 2026-10-15 소스 대조 기준이며 운영 DB 적용을 뜻하지 않는다.
 
 | 항목 | 설계 문서(v2.1) | 실제 구현 |
 |---|---|---|
@@ -364,3 +395,9 @@ DB 조인이 아니라 HTTP 호출이나 이벤트로 대체된다. `notificatio
 | 멤버십 | 문서에 없음 | **`MembershipTier`** 신설(§[`05-reward-flows.md`](05-reward-flows.md)) |
 | 감사 로그 | 문서에 없음 | **`admin_audit_events`** 신설(§[`06-ops-flows.md`](06-ops-flows.md)) |
 | 만보기 | 문서에 없음 | **`user_daily_steps`** 신설(§[`05-reward-flows.md`](05-reward-flows.md)) |
+| 프로모션 | 초기 ERD에서 생략 | `time_sale`·`time_sale_item`·`coupon_drop` 관계 추가 |
+| 상품 채번 | 일반 수동 채번 | `product_seq(seq_key VARCHAR(20) PK, next_val BIGINT)` |
+| 프로모션 경합 | 초기 설계에서 생략 | `promotion_guard(guard_key PK)`와 `products.time_sale_id`는 현재 로컬 수정·migration에 포함. 운영 적용 미확인 |
+
+프로모션 guard는 종류별 시작 작업을 직렬화하는 독립 행이다. `coupons.drop_exclusive`는 한번 드랍에 사용한
+코드를 이후 일반 코드 발급에서 제한하는 로컬 변경이며, 지갑의 사용 가능 여부와는 별개다. 운영 적용은 미확인이다.

@@ -1,6 +1,6 @@
 # 인증과 챗봇 (Auth & Chatbot)
 
-> 상태: ✅ 확정 · 최종수정: 2026-08-06
+> 상태: 소스 대조 · 최종수정: 2026-10-15
 
 JWT 인증·역할 게이트, 로그인 진입점, 챗봇 파이프라인, 그리고 챗봇에서 이어지는 **상담원 연결**까지 다룬다.
 [`01-system-architecture.md`](01-system-architecture.md) §3·§4의 요약을 **구현 수준으로 확장한 문서**이며,
@@ -12,6 +12,9 @@ JWT 인증·역할 게이트, 로그인 진입점, 챗봇 파이프라인, 그�
 ---
 
 ## 1. JWT 인증과 역할 게이트
+
+아래 시퀀스의 BCrypt·HS256은 로컬 발급/폴백 경로다. 공통 Infra 활성 시 RS256 위임이 기본이며,
+역할은 데모 로컬 사용자가 정본이다. 서버 세션 갱신·로그아웃은 [인프라 연동 §2.4](09-infra-integration.md#24-리프레시--rotate-on-use와-single-flight)를 따른다.
 
 ```mermaid
 %%{init: {"theme":"base","fontFamily":"Pretendard, Malgun Gothic, sans-serif","themeVariables":{"fontSize":"14px","primaryColor":"#DBEAFE","primaryBorderColor":"#1D4ED8","primaryTextColor":"#0F172A","lineColor":"#1D4ED8","secondaryColor":"#FEF3C7","tertiaryColor":"#DCFCE7","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1","noteBkgColor":"#FEF3C7","noteBorderColor":"#D97706","actorBkg":"#DBEAFE","actorBorder":"#1D4ED8","actorTextColor":"#0F172A","signalColor":"#1D4ED8","signalTextColor":"#0F172A","labelBoxBkgColor":"#DBEAFE","labelBoxBorderColor":"#1D4ED8","altSectionBkgColor":"#F8FAFC"},"flowchart":{"curve":"basis","htmlLabels":true,"padding":12}}}%%
@@ -55,7 +58,8 @@ sequenceDiagram
     end
 ```
 
-토큰은 `subject`에 사용자 id를, `role` 클레임에 역할 이름을 담은 HS256 JWT이고 기본 만료는 24시간이다.
+로컬 토큰은 `subject`에 사용자 id를, `role` 클레임에 역할 이름을 담은 HS256 JWT이고 기본 만료는 24시간이다.
+Infra 토큰은 RS256 서명·클레임을 검증하고 email로 로컬 사용자를 매핑한다.
 필터는 토큰이 없거나 깨졌을 때 예외를 던지지 않고 **인증 없이 그냥 통과**시킨다 — 공개 경로를 살리기 위해서고,
 보호 경로면 그 뒤 `SecurityConfig`가 401로 끊는다. **401과 403의 갈림은 명확하다**: 인증 자체가 없으면
 `UNAUTHORIZED`(401), 인증은 됐는데 역할이 모자라면 `FORBIDDEN`(403)이다. Spring Security 6의 기본 동작은
@@ -70,15 +74,19 @@ sequenceDiagram
 
 | 구간 | 규칙 |
 |---|---|
-| `/api/v1/health`, `/api/v1/auth/**`, Swagger·OpenAPI | `permitAll` |
+| `/api/v1/auth/me` | `authenticated` — 현재 로컬 수정 기준 |
+| `/api/v1/health`, 나머지 `/api/v1/auth/**`, Swagger·OpenAPI | `permitAll` |
 | `GET /api/v1/products/**`, `/categories/**`, `/stores/**`, `/products/*/reviews` | `permitAll` |
 | `/api/v1/admin/**` | `ADMIN` · `CUSTOMER_SUPPORT` · `SELLER_SUPPORT` |
 | `/api/v1/steps/**` | `CUSTOMER` 전용 |
+| `/api/v1/chat/**`, `/api/v1/coupon-drop/claim` | `CUSTOMER` 전용 |
+| 공개 타임세일·쿠폰 드랍 상태 조회 | `permitAll` |
 | `/orders` · `/points` · `/user-coupons` · `/reviews` · `/wishlists` · `/addresses` · `/inquiries` · `/device-tokens` · `/notifications` · `/coupons` | `authenticated` |
 | 그 외 전부 | `authenticated` |
 
 관리자 경로 안에서도 메서드 단위로 더 좁히는 곳이 있다 — 주문 상태 변경·리뷰 블라인드·문의 답변은
-`ADMIN`·`CUSTOMER_SUPPORT`만, **상품과 매장의 쓰기 작업은 `ADMIN` 전용**이다.
+`ADMIN`·`CUSTOMER_SUPPORT`만, 상품 생성·수정·상태·재고·이미지 교체는 `ADMIN`·`SELLER_SUPPORT`다.
+상품 삭제/복원·이미지 삭제와 매장 쓰기는 `ADMIN` 전용이다. 상담은 `ADMIN`·`CUSTOMER_SUPPORT`로 제한한다.
 일반 회원가입으로 만들어지는 계정의 역할은 서버가 `CUSTOMER`로 고정하며, 요청 DTO에 역할 필드 자체가 없다.
 세션은 `STATELESS`이고 CSRF는 꺼져 있으며, 비밀번호는 BCrypt로 저장한다.
 
@@ -128,7 +136,7 @@ sequenceDiagram
 %%{init: {"theme":"base","fontFamily":"Pretendard, Malgun Gothic, sans-serif","themeVariables":{"fontSize":"14px","primaryColor":"#DBEAFE","primaryBorderColor":"#1D4ED8","primaryTextColor":"#0F172A","lineColor":"#1D4ED8","secondaryColor":"#FEF3C7","tertiaryColor":"#DCFCE7","clusterBkg":"#F8FAFC","clusterBorder":"#CBD5E1","noteBkgColor":"#FEF3C7","noteBorderColor":"#D97706","actorBkg":"#DBEAFE","actorBorder":"#1D4ED8","actorTextColor":"#0F172A","signalColor":"#1D4ED8","signalTextColor":"#0F172A","labelBoxBkgColor":"#DBEAFE","labelBoxBorderColor":"#1D4ED8","altSectionBkgColor":"#F8FAFC"},"flowchart":{"curve":"basis","htmlLabels":true,"padding":12}}}%%
 %% 공통 브랜드 테마 — architecture/*.md 전 다이어그램에 동일한 init 블록이 들어간다. 색을 바꿀 때는 이 폴더 전 파일을 일괄 치환할 것.
 flowchart TD
-    q(["POST /api/chat<br/>{message}"]) --> parse["요청 검증<br/>본문 4KB · 입력 300자 이하<br/>허용 키는 message 하나"]
+    q(["POST /api/chat<br/>{message, orderId?}"]) --> parse["요청 검증<br/>본문 4KB · 입력 300자 이하<br/>message와 선택적 orderId만 허용"]
     parse --> sess{"대화 회수 소비<br/>서버 chat_usage 정본 (§4)"}
     sess -->|"잔여 없음"| limit["429 · mode=limit<br/>상담 연결 유도"]
     sess -.->|"사용량 서버 불통<br/>fail-open"| pre
@@ -480,6 +488,10 @@ stateDiagram-v2
 **탭 스코프를 고른 것은 의도적이다.** `localStorage`를 쓰면 다른 탭에서 연 쇼핑몰에도 상담 창이 따라붙고,
 탭을 닫아도 상태가 남아 다음 방문에 유령 상담이 뜬다. 상담은 "지금 이 탭에서 하고 있는 일"이라 탭 수명과
 묶는 것이 실제 사용자 모델에 맞는다.
+
+로그아웃·계정 전환은 별도의 수명 경계다. 현재 로컬 수정에서는 고객 챗봇/상담 표시와 늦은 응답 적용을
+로그인 수명에 연결하고, 비로그인 문진에서 시작한 정상 로그인 왕복도 함께 보존하도록 다룬다.
+같은 탭이라는 이유만으로 다른 계정의 대화를 계속 보여주는 보장을 의미하지 않는다.
 
 **재연결 순서를 고정한 이유**는 이력과 실시간 메시지가 어긋나지 않게 하기 위해서다. 방에 들어가기 전에
 이력을 먼저 읽으면, 읽은 뒤 입장하기까지의 틈에 도착한 메시지가 통째로 빈다. 붙고 → 들어가고 → 읽는

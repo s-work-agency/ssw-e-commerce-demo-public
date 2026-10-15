@@ -1,6 +1,6 @@
 # 용어집 (Glossary)
 
-> 상태: ✅ 확정 · 최종수정: 2026-07-03
+> 상태: 현재 소스 기준 · 최종수정: 2026-10-15
 
 프로젝트 전반에서 쓰는 용어를 통일한다.
 
@@ -14,21 +14,24 @@
 - **web** — 고객 웹. `ssw-e-commerce-demo-web/`, Next.js 16 App Router (실제 UI).
 - **server** — 백엔드. `ssw-e-commerce-demo-server/`, Spring Boot 3.4.1 REST API(`/api/v1`).
 - **android** — 고객 안드로이드. `ssw-e-commerce-demo-android/`, WebView 셸 + 네이티브 하단탭.
-- **admin-web** — 관리자 웹. 대시보드·주문/상품/재고/회원/리뷰/쿠폰 관리. (신규 개발)
-- **admin-windows** — 직원용 Windows WPF 데스크톱 앱. PC 대량관리·AI 운영보조. (신규 개발)
+- **admin-web** — 관리자 웹. 대시보드·주문/상품/재고/문의/리뷰/프로모션·상담·자연어 통계 구현. 회원/역할 관리 전체를 뜻하지 않는다.
+- **admin-windows** — 직원용 Windows WPF 데스크톱 앱. 역할 기반 10개 메뉴·CSV·AI 업무 도구 구현.
 - **prototype** — `design/prototype/shop-demo/…dc.html`. 포팅 원본(시각 충실도 **기준**).
 - ~~admin-android~~ — 관리자용 안드로이드 앱. **보류**(후속 검토, 이번 범위 제외).
 
 ## 동작 모드 / 식별
-- **Mock 모드 / HTTP 모드** — 웹 repository 팩토리 스위치(`NEXT_PUBLIC_API_MODE`). 기본 `mock`(클라 목데이터), `http`면 백엔드 연동. 현재 catalog/order만 http.
+- **Mock 모드 / HTTP 모드** — 웹 repository 팩토리 스위치(`NEXT_PUBLIC_API_MODE`). 기본 `http`로 API에 연결하고, `mock`은 명시적으로 선택하는 목데이터 경로다.
 - **mock 결제** — 실제 PG 없이 status를 바로 `paid`로 처리하는 데모 결제.
-- **X-Demo-User** — 현재 사용자 식별 헤더(기본 `mock_user_001`). JWT 도입 전 임시.
-- **JS 브릿지** — 안드 WebView ↔ 웹 통신. `window.__sswNavigate`(네비, 미구현), `AndroidBridge.onRouteChanged`/`onThemeChanged`(통지).
+- **JWT** — 현재 로그인 인증 수단. 공통 Infra의 RS256 위임과 로컬 HS256 폴백을 구분한다. `X-Demo-User`는 폐기한 초기 방식이다.
+- **JS 브릿지** — 안드 WebView ↔ 웹 통신. `window.__sswNavigate` SPA 이동과 `AndroidBridge.onRouteChanged`/`onThemeChanged` 통지, 걸음 센서·권한 연결이 구현돼 있다.
+- **자연어 통계** — LLM이 고정 지표와 허용 파라미터를 선택하고 서버가 검증·조회한 뒤 결과를 해석한다. 임의 SQL 생성이나 DB 직결을 하지 않는다.
+- **SIWC (Sign in with ChatGPT)** — WPF 어시스턴트의 ChatGPT 로그인 연결 선택지. OpenAI 호환 연결과 구분한다.
+- **로컬 구현 / 배포** — 소스에 있는 기능과 운영에 적용한 버전은 별개다. 자동 테스트·실제 UI·외부 연결도 각각의 근거가 필요하다.
 
 ## 도메인 엔티티
 바운디드 컨텍스트 6분할(v2.1 데이터 모델 기준):
 - **AUTH**: users
-- **COMMERCE**: categories · products · orders · order_items · reviews · coupons · user_coupons · wishlists · order_status_history · inquiries · user_addresses
+- **COMMERCE**: categories · products · orders · order_items · reviews · coupons · user_coupons · wishlists · order_status_history · inquiries · user_addresses · time_sale · time_sale_item · coupon_drop
 - **REWARD**: point_ledger
 - **FILE**: file_assets
 - **NOTIFICATION**: device_tokens · notifications
